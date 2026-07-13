@@ -1,0 +1,416 @@
+:root {
+  --primary: #059669;
+  --primary-hover: #047857;
+  --primary-light: #ecfdf5;
+  --primary-dark: #064e3b;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --bg-app: #f8fafc;
+  --border-color: #e2e8f0;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  
+  --radius-xl: 18px;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-size: 15px;
+  font-family: 'Outfit', 'Noto Sans Bengali', sans-serif;
+  letter-spacing: -0.01em;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Force modern mobile wrapper layout */
+#root {
+  width: 100%;
+  max-width: 480px; /* Force slightly narrower, sleek iPhone aspect ratio */
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  position: relative;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.03);
+}
+
+@media (min-width: 480px) {
+  body {
+    background-color: #f1f5f9;
+  }
+}
+
+/* Form Inputs and Focus States */
+.form-control, .form-select {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  padding: 11px 14px;
+  font-size: 14px;
+  color: var(--text-main);
+  background-color: #ffffff;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-control:focus, .form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+  color: var(--text-main);
+}
+
+.form-label {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Premium Rounded Cards */
+.card-custom {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  padding: 18px;
+  margin-bottom: 16px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-custom:active {
+  transform: scale(0.99);
+}
+
+/* Dashboard Action Buttons Grid */
+.card-quick-action {
+  border-radius: var(--radius-md);
+  padding: 14px 10px;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 85px;
+}
+
+.card-quick-action i {
+  font-size: 22px;
+  margin-bottom: 8px;
+  color: var(--primary);
+}
+
+.card-quick-action:active {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  transform: scale(0.95);
+}
+
+/* Touch Friendly Pill-shaped Buttons */
+.btn-custom {
+  border-radius: var(--radius-md);
+  padding: 12px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-custom-primary {
+  background: linear-gradient(135deg, var(--primary), #047857);
+  color: #ffffff;
+  border: none;
+}
+.btn-custom-primary:hover, .btn-custom-primary:active {
+  background: linear-gradient(135deg, #047857, #065f46);
+  color: #ffffff;
+}
+
+.btn-custom-secondary {
+  background-color: #ffffff;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+}
+.btn-custom-secondary:active {
+  background-color: #f8fafc;
+}
+
+.btn-custom-danger {
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fee2e2;
+}
+.btn-custom-danger:active {
+  background-color: #fee2e2;
+}
+
+/* Clean Header with Profile & Synced Badge */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+  background-color: #ffffff;
+  color: var(--text-main);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-header .h6 {
+  color: var(--primary) !important;
+}
+
+.main-content {
+  flex: 1;
+  padding: 18px;
+  padding-bottom: 40px;
+}
+
+/* Glassmorphic Sticky Bottom Navigation Drawer */
+.bottom-nav {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 66px;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 1030;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.02);
+}
+
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  flex: 1;
+  height: 100%;
+  transition: all 0.2s ease;
+}
+
+.bottom-nav-item i {
+  font-size: 18px;
+  margin-bottom: 3px;
+  transition: transform 0.2s ease;
+}
+
+.bottom-nav-item.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.bottom-nav-item.active i {
+  transform: translateY(-2px);
+}
+
+/* Password input toggles wrapper */
+.password-input-wrapper {
+  position: relative;
+}
+
+.password-input-wrapper input {
+  padding-right: 44px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+/* Category pills */
+.category-pill {
+  padding: 8px 16px;
+  border-radius: 30px;
+  background-color: #f1f5f9;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  display: inline-block;
+  margin-right: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.category-pill.active {
+  background-color: var(--primary-light);
+  color: var(--primary);
+  border-color: rgba(5, 150, 105, 0.2);
+}
+
+/* Responsive Custom Tables without bulky borders */
+.table-responsive-custom {
+  max-height: 420px;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.table-custom {
+  margin-bottom: 0;
+}
+
+.table-custom th {
+  background-color: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border-color);
+  padding: 14px 16px;
+}
+
+.table-custom td {
+  padding: 14px 16px;
+  font-size: 13.5px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* Search Bar Wrapper */
+.search-container {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.search-container i {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.search-container input {
+  padding-left: 40px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  height: 44px;
+  font-size: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Floating Action Button (FAB) */
+.fab-btn {
+  position: fixed;
+  bottom: 85px;
+  right: calc(50% - 220px);
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), #047857);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.4);
+  border: none;
+  z-index: 1000;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+@media (max-width: 480px) {
+  .fab-btn {
+    right: 18px;
+  }
+}
+
+.fab-btn:active {
+  transform: scale(0.92);
+}
+
+/* Badges overrides */
+.badge-custom {
+  padding: 5px 9px;
+  border-radius: 30px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pos-input {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  padding: 5px 8px;
+  text-align: center;
+  width: 55px;
+  box-shadow: var(--shadow-sm);
+}
+.pos-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* Print Receipt stylesheet */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-invoice, .printable-invoice * {
+    visibility: visible;
+  }
+  .printable-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 80mm !important;
+    font-family: 'Noto Sans Bengali', monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #000;
+    background: #fff;
+    padding: 1mm;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

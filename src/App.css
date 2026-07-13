@@ -1,0 +1,16 @@
+/* Custom helper classes for Shop Khata Pro */
+.pointer {
+  cursor: pointer;
+}
+.no-resize {
+  resize: none;
+}
+.fs-7 {
+  font-size: 0.85rem;
+}
+.fs-8 {
+  font-size: 0.75rem;
+}
+.min-h-100 {
+  min-height: 100px;
+}
