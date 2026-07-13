@@ -1,0 +1,22 @@
+{
+  "short_name": "ShopKhataPro",
+  "name": "Shop Khata Pro",
+  "description": "বাংলাদেশী ক্ষুদ্র ব্যবসার জন্য সহজ ডিজিটাল হিসাব খাতা ও পিওএস ক্যাশ অ্যাপ",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#198754",
+  "display": "standalone",
+  "orientation": "portrait"
+}

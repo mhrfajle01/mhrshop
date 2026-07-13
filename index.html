@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Shop Khata Pro - বাংলাদেশী ক্ষুদ্র ব্যবসার জন্য একটি আধুনিক এবং সহজ ডিজিটাল হিসাব খাতা অ্যাপ।" />
     <meta name="theme-color" content="#198754" />
@@ -28,5 +29,16 @@
     <!-- Bootstrap Bundle JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="/src/main.jsx"></script>
+    
+    <!-- PWA Service Worker Registration -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js")
+            .then((reg) => console.log("PWA Service Worker registered successfully:", reg))
+            .catch((err) => console.warn("PWA Service Worker failed to register:", err));
+        });
+      }
+    </script>
   </body>
 </html>
