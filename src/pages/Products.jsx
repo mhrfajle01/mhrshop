@@ -483,6 +483,14 @@ export default function Products() {
                               </button>
                               <ul className="dropdown-menu dropdown-menu-end shadow border-0 py-1">
                                 <li>
+                                  <button 
+                                    className="dropdown-item py-2 text-success fw-semibold" 
+                                    onClick={() => navigateTo("/purchases/new", { productId: prod.id })}
+                                  >
+                                    <i className="bi bi-bag-plus me-2"></i> Purchase More
+                                  </button>
+                                </li>
+                                <li>
                                   <button className="dropdown-item py-2" onClick={() => handleEdit(prod)}>
                                     <i className="bi bi-pencil me-2 text-warning"></i> Edit Product
                                   </button>

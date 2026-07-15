@@ -614,18 +614,19 @@ export const addPurchase = async (uid, isLocal, purchaseData) => {
     const newPurchaseDocRef = doc(purchasesColRef);
     batch.set(newPurchaseDocRef, purchase);
     
-    // Update Stocks (Add stock on purchase)
+    // Update Stocks (Add stock on purchase) and adjust prices
     for (const item of purchase.items) {
       const prodRef = doc(db, "users", uid, "products", item.productId);
-      batch.update(prodRef, {
+      const updateData = {
         stock: increment(item.quantity)
-      });
-      // Optionally update product's purchase price to the latest one
+      };
       if (item.purchasePrice > 0) {
-        batch.update(prodRef, {
-          purchasePrice: item.purchasePrice
-        });
+        updateData.purchasePrice = item.purchasePrice;
       }
+      if (item.sellingPrice > 0) {
+        updateData.sellingPrice = item.sellingPrice;
+      }
+      batch.update(prodRef, updateData);
     }
 
     // Update Supplier Due if supplier exists & there is due
@@ -664,7 +665,7 @@ export const addPurchase = async (uid, isLocal, purchaseData) => {
     localPurchases.push(newPurchase);
     saveLocalData(uid, "purchases", localPurchases);
     
-    // Update stocks and purchase prices locally
+    // Update stocks and prices locally
     const products = getLocalData(uid, "products");
     for (const item of purchase.items) {
       const prodIdx = products.findIndex(p => p.id === item.productId);
@@ -672,6 +673,9 @@ export const addPurchase = async (uid, isLocal, purchaseData) => {
         products[prodIdx].stock = Number(products[prodIdx].stock || 0) + item.quantity;
         if (item.purchasePrice > 0) {
           products[prodIdx].purchasePrice = item.purchasePrice;
+        }
+        if (item.sellingPrice > 0) {
+          products[prodIdx].sellingPrice = item.sellingPrice;
         }
       }
     }

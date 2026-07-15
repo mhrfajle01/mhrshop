@@ -3,6 +3,7 @@ import { useData } from "../context/DataContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import { exportToExcel, exportEnhancedReportToExcel } from "../utils/excelGenerator";
 import dayjs from "dayjs";
+import CopyableText from "../components/CopyableText";
 import Chart from "chart.js/auto";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -396,7 +397,9 @@ export default function Reports() {
                   {filteredSales.map((sale) => (
                     <tr key={sale.id}>
                       <td>
-                        <div className="fw-semibold font-monospace fs-8">{sale.invoiceNumber}</div>
+                        <div className="fw-semibold fs-8">
+                          <CopyableText text={sale.invoiceNumber} />
+                        </div>
                         <small className="text-muted fs-9">{formatDate(sale.date, "DD MMM YYYY")}</small>
                       </td>
                       <td>
@@ -493,7 +496,9 @@ export default function Reports() {
             <tbody>
               {filteredSales.slice(0, 25).map(s => (
                 <tr key={s.id}>
-                  <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>{s.invoiceNumber}</td>
+                  <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>
+                    <CopyableText text={s.invoiceNumber} />
+                  </td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>{formatDate(s.date, "DD/MM/YYYY")}</td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>{s.customerName || "খুচরা ক্রেতা"}</td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{s.payableAmount}</td>

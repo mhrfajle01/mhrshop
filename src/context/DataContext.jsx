@@ -240,6 +240,12 @@ export function DataProvider({ children }) {
           const newDue = Math.max(0, Number(cust.due || 0) - Number(sale.dueAmount));
           await dbApi.updateCustomer(uid, isLocal, sale.customerId, { ...cust, due: newDue });
         }
+
+        // 3. Delete corresponding automatic khata entry if exists
+        const relatedKhata = khata.find(k => !k.deleted && k.partyId === sale.customerId && k.partyType === "customer" && k.type === "due" && k.description.includes(sale.invoiceNumber));
+        if (relatedKhata) {
+          await dbApi.softDeleteDoc(uid, isLocal, "khata", relatedKhata.id, `Reversed sale ledger entry ৳${relatedKhata.amount}`);
+        }
       }
     } catch (e) {
       console.error("Failed to adjust balances for soft deleted sale:", e);
@@ -282,6 +288,12 @@ export function DataProvider({ children }) {
         if (supp) {
           const newDue = Math.max(0, Number(supp.due || 0) - Number(pur.dueAmount));
           await dbApi.updateSupplier(uid, isLocal, pur.supplierId, { ...supp, due: newDue });
+        }
+
+        // 3. Delete corresponding automatic khata entry if exists
+        const relatedKhata = khata.find(k => !k.deleted && k.partyId === pur.supplierId && k.partyType === "supplier" && k.type === "due" && k.description.includes(pur.invoiceNumber));
+        if (relatedKhata) {
+          await dbApi.softDeleteDoc(uid, isLocal, "khata", relatedKhata.id, `Reversed purchase ledger entry ৳${relatedKhata.amount}`);
         }
       }
     } catch (e) {
@@ -453,25 +465,19 @@ export function DataProvider({ children }) {
   const activeCategories = categories.filter(c => !c.deleted);
   const activeProducts = products.filter(p => !p.deleted);
   
-  // Dynamic live dues for active customers computed directly from sales and khata source-of-truth
+  // Live dues for active customers taken directly from the database running due balance (source-of-truth)
   const activeCustomers = customers.filter(c => !c.deleted).map(cust => {
-    const saleDues = sales.filter(s => !s.deleted && s.customerId === cust.id).reduce((acc, s) => acc + (s.dueAmount || 0), 0);
-    const khataDues = khata.filter(k => !k.deleted && k.partyId === cust.id && k.partyType === "customer" && k.type === "due").reduce((acc, k) => acc + (k.amount || 0), 0);
-    const khataPayments = khata.filter(k => !k.deleted && k.partyId === cust.id && k.partyType === "customer" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
     return {
       ...cust,
-      due: Math.max(0, saleDues + khataDues - khataPayments)
+      due: Number(cust.due || 0)
     };
   });
 
-  // Dynamic live dues for active suppliers computed directly from purchases and khata source-of-truth
+  // Live dues for active suppliers taken directly from the database running due balance (source-of-truth)
   const activeSuppliers = suppliers.filter(s => !s.deleted).map(supp => {
-    const purchaseDues = purchases.filter(p => !p.deleted && p.supplierId === supp.id).reduce((acc, p) => acc + (p.dueAmount || 0), 0);
-    const khataDues = khata.filter(k => !k.deleted && k.partyId === supp.id && k.partyType === "supplier" && k.type === "due").reduce((acc, k) => acc + (k.amount || 0), 0);
-    const khataPayments = khata.filter(k => !k.deleted && k.partyId === supp.id && k.partyType === "supplier" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
     return {
       ...supp,
-      due: Math.max(0, purchaseDues + khataDues - khataPayments)
+      due: Number(supp.due || 0)
     };
   });
 

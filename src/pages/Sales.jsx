@@ -3,6 +3,7 @@ import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import SalesInvoice from "../components/SalesInvoice";
+import CopyableText from "../components/CopyableText";
 
 export default function Sales() {
   const { sales, deleteSaleItem, loading } = useData();
@@ -94,8 +95,8 @@ export default function Sales() {
                 {filteredSales.map((sale) => (
                   <tr key={sale.id}>
                     <td>
-                      <div className="fw-semibold text-success font-monospace" style={{ fontSize: "13px" }}>
-                        {sale.invoiceNumber}
+                      <div className="fw-semibold text-success" style={{ fontSize: "13px" }}>
+                        <CopyableText text={sale.invoiceNumber} />
                       </div>
                       <small className="text-muted" style={{ fontSize: "11px" }}>
                         {formatDate(sale.date, "DD MMM YYYY")}

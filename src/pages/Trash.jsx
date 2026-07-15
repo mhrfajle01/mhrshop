@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
+import CopyableText from "../components/CopyableText";
 
 export default function Trash() {
   const { trash, trashRestoreItem, trashPermanentDeleteItem, loading } = useData();
@@ -150,7 +151,9 @@ export default function Trash() {
               trash.sales.map(sale => (
                 <div key={sale.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light fs-7">
                   <div>
-                    <span className="fw-semibold font-monospace text-success">{sale.invoiceNumber}</span>
+                    <span className="fw-semibold text-success">
+                      <CopyableText text={sale.invoiceNumber} />
+                    </span>
                     <small className="text-muted d-block">{sale.customerName} • Total: {formatCurrency(sale.payableAmount)}</small>
                   </div>
                   <div className="d-flex gap-1">
@@ -171,7 +174,9 @@ export default function Trash() {
               trash.purchases.map(pur => (
                 <div key={pur.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light fs-7">
                   <div>
-                    <span className="fw-semibold font-monospace text-info">{pur.invoiceNumber}</span>
+                    <span className="fw-semibold text-info">
+                      <CopyableText text={pur.invoiceNumber} />
+                    </span>
                     <small className="text-muted d-block">{pur.supplierName} • Bill: {formatCurrency(pur.totalAmount)}</small>
                   </div>
                   <div className="d-flex gap-1">

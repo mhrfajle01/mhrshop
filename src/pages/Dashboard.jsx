@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
-import { formatCurrency } from "../utils/formatters";
+import { formatCurrency, formatDate } from "../utils/formatters";
 import dayjs from "dayjs";
 import Chart from "chart.js/auto";
 import SalesInvoice from "../components/SalesInvoice";
+import CopyableText from "../components/CopyableText";
 
 export default function Dashboard() {
   const { 
@@ -26,50 +27,164 @@ export default function Dashboard() {
   // Accordion drawer toggle states
   const [showCashBreakdown, setShowCashBreakdown] = useState(false);
   const [showTodaySalesList, setShowTodaySalesList] = useState(false);
+  const [showTodayPurchasesList, setShowTodayPurchasesList] = useState(false);
+  const [showPeriodExpensesList, setShowPeriodExpensesList] = useState(false);
+  const [showPeriodProfitBreakdown, setShowPeriodProfitBreakdown] = useState(false);
+  const [showLowStockList, setShowLowStockList] = useState(false);
+  const [showHighRiskDues, setShowHighRiskDues] = useState(false);
+  
   const [selectedSale, setSelectedSale] = useState(null);
+  const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [dashboardPeriod, setDashboardPeriod] = useState("today");
+  const [openingFloat, setOpeningFloat] = useState(() => Number(localStorage.getItem("cash_opening_float") || 0));
+  const [toastConfig, setToastConfig] = useState({ show: false, message: "" });
 
   // Compute stats
   const todayStr = dayjs().format("YYYY-MM-DD");
+
+  const handleCopyDailyBlueprint = () => {
+    const todayStrVal = dayjs().format("YYYY-MM-DD");
+    const todaySalesDocs = sales.filter(s => !s.deleted && s.date === todayStrVal);
+    const todaySalesCash = todaySalesDocs.reduce((acc, s) => acc + (s.paidAmount || 0), 0);
+    const todaySalesDues = todaySalesDocs.reduce((acc, s) => acc + (s.dueAmount || 0), 0);
+
+    const todayPurchasesDocs = purchases.filter(p => !p.deleted && p.date === todayStrVal);
+    const todayPurchasesCash = todayPurchasesDocs.reduce((acc, p) => acc + (p.paidAmount || 0), 0);
+    const todayPurchasesDues = todayPurchasesDocs.reduce((acc, p) => acc + (p.dueAmount || 0), 0);
+
+    const todayExpensesDocs = expenses.filter(e => !e.deleted && e.date === todayStrVal);
+    const todayExpensesTotal = todayExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
+
+    const todayKhataCustomerPayments = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "customer" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
+    const todayKhataCustomerDues = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "customer" && k.type === "due" && !(k.description || "").includes("বিক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
+    const todayKhataSupplierPayments = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "supplier" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
+    const todayKhataSupplierDues = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "supplier" && k.type === "due" && !(k.description || "").includes("ক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
+
+    const todayCashReceived = todaySalesCash + todayKhataCustomerPayments;
+    const todayCashPaid = todayPurchasesCash + todayKhataSupplierPayments + todayExpensesTotal;
+    const todayNetCashHand = todayCashReceived - todayCashPaid;
+
+    const openingFloatVal = Number(localStorage.getItem("cash_opening_float") || 0);
+    const expectedDrawerCash = openingFloatVal + todayNetCashHand;
+
+    const netCustomerDueChange = (todaySalesDues + todayKhataCustomerDues) - todayKhataCustomerPayments;
+    const netSupplierDueChange = (todayPurchasesDues + todayKhataSupplierDues) - todayKhataSupplierPayments;
+
+    const text = `তারিখ: ${formatDate(todayStrVal, "DD MMMM YYYY")}
+--------------------------------------------
+১. ক্যাশ ড্রয়ার বিবরণী (Cash Drawer Statement)
+--------------------------------------------
+(+) প্রারম্ভিক ক্যাশ ফ্লোট (Opening Cash): ${formatCurrency(openingFloatVal)}
+(+) নগদ ও ক্যাশ বিক্রয় (Cash Sales): ${formatCurrency(todaySalesCash)}
+(+) কাস্টমার থেকে বকেয়া আদায় (Payment In): ${formatCurrency(todayKhataCustomerPayments)}
+(-) পাইকারি নগদ ক্রয় (Wholesale Paid): ${formatCurrency(todayPurchasesCash)}
+(-) সাপ্লায়ারকে বকেয়া পরিশোধ (Payment Out): ${formatCurrency(todayKhataSupplierPayments)}
+(-) দোকান পরিচালন খরচ (Operating Expenses): ${formatCurrency(todayExpensesTotal)}
+--------------------------------------------
+(=) নিট ক্যাশ ফ্লো (Net Cash Flow): ${formatCurrency(todayNetCashHand)}
+(=) বাক্সে নগদ থাকা উচিত (Closing Cash): ${formatCurrency(expectedDrawerCash)}
+
+--------------------------------------------
+২. কাস্টমার বকেয়া বিবরণী (Customer Credit Ledger)
+--------------------------------------------
+(+) আজকের নতুন বাকি বিক্রয় (Invoice Credit): ${formatCurrency(todaySalesDues)}
+(+) ম্যানুয়াল বাকি খাতা এন্ট্রি (Khata Dues): ${formatCurrency(todayKhataCustomerDues)}
+(-) কাস্টমার থেকে বকেয়া আদায় (Dues Collected): ${formatCurrency(todayKhataCustomerPayments)}
+--------------------------------------------
+(=) নিট কাস্টমার বকেয়া পরিবর্তন (Net Due Change): ${formatCurrency(netCustomerDueChange)}
+
+--------------------------------------------
+৩. সাপ্লায়ার দেনা বিবরণী (Supplier Accounts Payable)
+--------------------------------------------
+(+) আজকের নতুন মহাজন বাকি ক্রয় (Invoice Credit): ${formatCurrency(todayPurchasesDues)}
+(+) ম্যানুয়াল মহাজন দেনা এন্ট্রি (Khata Dues): ${formatCurrency(todayKhataSupplierDues)}
+(-) মহাজন বকেয়া দেনাশোধ (Dues Paid): ${formatCurrency(todayKhataSupplierPayments)}
+--------------------------------------------
+(=) নিট মহাজন দেনা পরিবর্তন (Net Payable Change): ${formatCurrency(netSupplierDueChange)}`;
+
+    navigator.clipboard.writeText(text);
+    
+    setToastConfig({
+      show: true,
+      message: "আজকের হিসেব ব্লুপ্রিন্ট ক্লিপবোর্ডে কপি করা হয়েছে!"
+    });
+    setTimeout(() => {
+      setToastConfig({ show: false, message: "" });
+    }, 3000);
+  };
   
-  // Today's Cash Flow calculations
-  const todaySalesPaid = sales.filter(s => s.date === todayStr).reduce((acc, s) => acc + s.paidAmount, 0);
-  const todayPurchasesPaid = purchases.filter(p => p.date === todayStr).reduce((acc, p) => acc + p.paidAmount, 0);
-  const todayExpensesPaid = expenses.filter(e => e.date === todayStr).reduce((acc, e) => acc + e.amount, 0);
+  // Get date range for the active dashboardPeriod
+  const getPeriodDates = (period) => {
+    const today = dayjs().format("YYYY-MM-DD");
+    if (period === "today") {
+      return { start: today, end: today };
+    } else if (period === "yesterday") {
+      const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+      return { start: yesterday, end: yesterday };
+    } else if (period === "week") {
+      const startOfWeek = dayjs().startOf("week").format("YYYY-MM-DD");
+      return { start: startOfWeek, end: today };
+    } else if (period === "month") {
+      const startOfMonth = dayjs().startOf("month").format("YYYY-MM-DD");
+      return { start: startOfMonth, end: today };
+    }
+    return { start: today, end: today };
+  };
+
+  const isDateInPeriod = (dateStr) => {
+    const { start, end } = getPeriodDates(dashboardPeriod);
+    return dateStr >= start && dateStr <= end;
+  };
+
+  const getPeriodLabel = (period, suffix) => {
+    const labels = {
+      today: "Today's",
+      yesterday: "Yesterday's",
+      week: "This Week's",
+      month: "This Month's"
+    };
+    return `${labels[period] || "Today's"} ${suffix}`;
+  };
+  
+  // Period Cash Flow calculations
+  const todaySalesPaid = sales.filter(s => isDateInPeriod(s.date)).reduce((acc, s) => acc + s.paidAmount, 0);
+  const todayPurchasesPaid = purchases.filter(p => isDateInPeriod(p.date)).reduce((acc, p) => acc + p.paidAmount, 0);
+  const todayExpensesPaid = expenses.filter(e => isDateInPeriod(e.date)).reduce((acc, e) => acc + e.amount, 0);
   const todayCustomerKhataReceived = khata
-    .filter(k => k.date === todayStr && k.partyType === "customer" && k.type === "payment")
+    .filter(k => isDateInPeriod(k.date) && k.partyType === "customer" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
   const todaySupplierKhataPaid = khata
-    .filter(k => k.date === todayStr && k.partyType === "supplier" && k.type === "payment")
+    .filter(k => isDateInPeriod(k.date) && k.partyType === "supplier" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
 
   const todayCashInflow = todaySalesPaid + todayCustomerKhataReceived;
   const todayCashOutflow = todayPurchasesPaid + todaySupplierKhataPaid + todayExpensesPaid;
   const todayNetCashFlow = todayCashInflow - todayCashOutflow;
 
-  // Filter today's sales list
-  const todaySalesRecords = sales.filter(s => s.date === todayStr);
+  // Filter period sales, purchases, expenses list
+  const todaySalesRecords = sales.filter(s => isDateInPeriod(s.date));
+  const todayPurchasesRecords = purchases.filter(p => isDateInPeriod(p.date));
+  const todayExpensesRecords = expenses.filter(e => isDateInPeriod(e.date));
   
-  // Today's Sales
+  // Period Sales value
   const todaySalesVal = sales
-    .filter(s => s.date === todayStr)
+    .filter(s => isDateInPeriod(s.date))
     .reduce((acc, s) => acc + s.payableAmount, 0);
 
-  // Today's Purchase
+  // Period Purchase value
   const todayPurchaseVal = purchases
-    .filter(p => p.date === todayStr)
+    .filter(p => isDateInPeriod(p.date))
     .reduce((acc, p) => acc + p.totalAmount, 0);
 
-  // Today's Expense
+  // Period Expense value
   const todayExpenseVal = expenses
-    .filter(e => e.date === todayStr)
+    .filter(e => isDateInPeriod(e.date))
     .reduce((acc, e) => acc + e.amount, 0);
 
-  // Today's Net Profit: Sales Gross Profit - Today's Expenses
-  const todaySalesList = sales.filter(s => s.date === todayStr);
+  // Period Profit: Sales Gross Profit - Expenses
   let todayGrossProfit = 0;
-  todaySalesList.forEach(sale => {
+  todaySalesRecords.forEach(sale => {
     sale.items.forEach(item => {
-      // Find corresponding product to get purchase price if not cached in sale item
       const prod = products.find(p => p.id === item.productId);
       const buyPrice = item.purchasePrice || (prod ? prod.purchasePrice : 0);
       const profitPerItem = item.sellingPrice - buyPrice;
@@ -78,7 +193,7 @@ export default function Dashboard() {
   });
   const todayNetProfit = todayGrossProfit - todayExpenseVal;
 
-  // Cash In Hand Calculation
+  // Cumulative Cash In Hand Calculation (All-time drawer balance)
   const totalSalesPaid = sales.reduce((acc, s) => acc + s.paidAmount, 0);
   const totalPurchasesPaid = purchases.reduce((acc, p) => acc + p.paidAmount, 0);
   const totalExpensesPaid = expenses.reduce((acc, e) => acc + e.amount, 0);
@@ -89,7 +204,7 @@ export default function Dashboard() {
     .filter(k => k.partyType === "supplier" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
 
-  const cashInHand = (totalSalesPaid + totalKhataCustomerReceived) - 
+  const cashInHand = openingFloat + (totalSalesPaid + totalKhataCustomerReceived) - 
                      (totalPurchasesPaid + totalKhataSupplierPaid + totalExpensesPaid);
 
   // Total Due Balance
@@ -97,7 +212,7 @@ export default function Dashboard() {
   const totalSupplierDue = suppliers.reduce((acc, s) => acc + (s.due || 0), 0);
 
   // Low Stock Items
-  const lowStockCount = products.filter(p => p.stock <= p.minStock).length;
+  const lowStockCount = products.filter(p => p.stock <= (p.minStock || 0)).length;
 
   // Recent Activities
   const recentActivities = activities.slice(0, 5);
@@ -178,10 +293,35 @@ export default function Dashboard() {
 
   return (
     <div className="main-content">
-      {/* Title */}
-      <div className="mb-4">
-        <h2 className="h4 mb-1">Dashboard</h2>
-        <p className="text-muted fs-7">আজকের ব্যবসার হিসাব-নিকাশ এবং সংক্ষিপ্ত চিত্র</p>
+      {/* Title with Period Filter */}
+      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 mb-4 no-print">
+        <div>
+          <h2 className="h4 mb-1">Dashboard</h2>
+          <p className="text-muted fs-7 mb-0">ব্যবসায়িক হিসাব-নিকাশ এবং সংক্ষিপ্ত চিত্র ({dashboardPeriod === "today" ? "আজকের চিত্র" : dashboardPeriod === "yesterday" ? "গতকালের চিত্র" : dashboardPeriod === "week" ? "সাপ্তাহিক চিত্র" : "মাসিক চিত্র"})</p>
+        </div>
+        <div className="btn-group btn-group-sm bg-white border rounded shadow-sm w-100 w-sm-auto justify-content-between" role="group" aria-label="Period switcher">
+          {["today", "yesterday", "week", "month"].map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`btn btn-sm btn-custom py-1.5 flex-grow-1 flex-sm-grow-0 px-2.5 font-monospace text-capitalize ${dashboardPeriod === p ? "btn-success text-white" : "btn-light text-secondary border-0"}`}
+              style={{ borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}
+              onClick={() => {
+                setDashboardPeriod(p);
+                // Close lists to avoid confusion
+                setShowTodaySalesList(false);
+                setShowTodayPurchasesList(false);
+                setShowPeriodExpensesList(false);
+                setShowPeriodProfitBreakdown(false);
+                setShowCashBreakdown(false);
+                setShowLowStockList(false);
+                setShowHighRiskDues(false);
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Main KPI Stats Block */}
@@ -192,11 +332,16 @@ export default function Dashboard() {
             onClick={() => {
               setShowTodaySalesList(!showTodaySalesList);
               setShowCashBreakdown(false);
+              setShowTodayPurchasesList(false);
+              setShowPeriodExpensesList(false);
+              setShowPeriodProfitBreakdown(false);
+              setShowLowStockList(false);
+              setShowHighRiskDues(false);
             }}
             style={{ cursor: "pointer" }}
           >
             <small className="opacity-75 fs-8 text-uppercase d-flex align-items-center justify-content-center gap-1">
-              Today's Sales <i className={`bi ${showTodaySalesList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              {getPeriodLabel(dashboardPeriod, "Sales")} <i className={`bi ${showTodaySalesList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
             </small>
             <h3 className="m-0 fw-bold">{formatCurrency(todaySalesVal)}</h3>
           </div>
@@ -205,6 +350,11 @@ export default function Dashboard() {
             onClick={() => {
               setShowCashBreakdown(!showCashBreakdown);
               setShowTodaySalesList(false);
+              setShowTodayPurchasesList(false);
+              setShowPeriodExpensesList(false);
+              setShowPeriodProfitBreakdown(false);
+              setShowLowStockList(false);
+              setShowHighRiskDues(false);
             }}
             style={{ cursor: "pointer" }}
           >
@@ -225,8 +375,8 @@ export default function Dashboard() {
           </div>
           
           <div className="fs-7 font-monospace">
-            {/* Today's Cash Flow */}
-            <div className="fw-semibold text-muted border-bottom pb-1 mb-2">Today's Flow (আজকের ক্যাশ প্রবাহ)</div>
+            {/* Period Cash Flow */}
+            <div className="fw-semibold text-muted border-bottom pb-1 mb-2">{getPeriodLabel(dashboardPeriod, "Flow")} (ক্যাশ প্রবাহ)</div>
             <div className="d-flex justify-content-between mb-1">
               <span>(+) Sales Cash (বিক্রয় নগদ):</span>
               <span className="text-success">{formatCurrency(todaySalesPaid)}</span>
@@ -248,30 +398,49 @@ export default function Dashboard() {
               <span className="text-danger">{formatCurrency(todayExpensesPaid)}</span>
             </div>
             <div className="d-flex justify-content-between fw-bold border-top pt-1 text-dark mb-3">
-              <span>Net Flow (আজকের নিট ক্যাশ):</span>
+              <span>Net Flow (নিট ক্যাশ):</span>
               <span className={todayNetCashFlow >= 0 ? "text-success" : "text-danger"}>{formatCurrency(todayNetCashFlow)}</span>
             </div>
 
             {/* Overall Cumulative Cash */}
-            <div className="fw-semibold text-muted border-bottom pb-1 mb-2">Overall Drawer (মোট ড্রয়ার ক্যাশ)</div>
+            <div className="fw-semibold text-muted border-bottom pb-1 mb-2 d-flex justify-content-between align-items-center">
+              <span>Overall Drawer (মোট ড্রয়ার ক্যাশ)</span>
+              <button 
+                className="btn btn-link p-0 fs-8 text-success text-decoration-none font-monospace fw-bold"
+                onClick={() => {
+                  const floatInput = prompt("Enter Opening Cash Float (প্রারম্ভিক ক্যাশ লিখুন):", openingFloat);
+                  if (floatInput !== null) {
+                    const val = Number(floatInput) || 0;
+                    localStorage.setItem("cash_opening_float", val);
+                    setOpeningFloat(val);
+                  }
+                }}
+              >
+                <i className="bi bi-pencil-square"></i> Set Float
+              </button>
+            </div>
             <div className="d-flex justify-content-between mb-1">
-              <span>Total Sales Cash (বিক্রয় ক্যাশ):</span>
+              <span>(+) Opening Cash Float (প্রারম্ভিক ক্যাশ):</span>
+              <span className="text-success">{formatCurrency(openingFloat)}</span>
+            </div>
+            <div className="d-flex justify-content-between mb-1">
+              <span>(+) Total Sales Cash (বিক্রয় ক্যাশ):</span>
               <span className="text-success">{formatCurrency(totalSalesPaid)}</span>
             </div>
             <div className="d-flex justify-content-between mb-1">
-              <span>Total Customer Dues Coll. (বকেয়া আদায়):</span>
+              <span>(+) Total Customer Dues Coll. (বকেয়া আদায়):</span>
               <span className="text-success">{formatCurrency(totalKhataCustomerReceived)}</span>
             </div>
             <div className="d-flex justify-content-between mb-1">
-              <span>Total Purchases Paid (ক্রয় পরিশোধ):</span>
+              <span>(-) Total Purchases Paid (ক্রয় পরিশোধ):</span>
               <span className="text-danger">{formatCurrency(totalPurchasesPaid)}</span>
             </div>
             <div className="d-flex justify-content-between mb-1">
-              <span>Total Supplier Payments (মহাজন পরিশোধ):</span>
+              <span>(-) Total Supplier Payments (মহাজন পরিশোধ):</span>
               <span className="text-danger">{formatCurrency(totalKhataSupplierPaid)}</span>
             </div>
             <div className="d-flex justify-content-between mb-2">
-              <span>Total Shop Expenses (মোট খরচ):</span>
+              <span>(-) Total Shop Expenses (মোট খরচ):</span>
               <span className="text-danger">{formatCurrency(totalExpensesPaid)}</span>
             </div>
             <div className="d-flex justify-content-between fw-bold border-top pt-1 text-success fs-6">
@@ -282,22 +451,24 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* DYNAMIC ACCORDION: Today's Sales List */}
+      {/* DYNAMIC ACCORDION: Period Sales List */}
       {showTodaySalesList && (
         <div className="card-custom bg-white border border-success-subtle p-3 mb-3 no-print">
           <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
-            <h5 className="h6 fw-bold text-success m-0 font-monospace">Today's Invoices (আজকের বিক্রয় রসিদসমূহ)</h5>
+            <h5 className="h6 fw-bold text-success m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Invoices")} (বিক্রয় বিবরণী)</h5>
             <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowTodaySalesList(false)}></button>
           </div>
           
           {todaySalesRecords.length === 0 ? (
-            <div className="text-center text-muted fs-8 py-3">আজকে এখন পর্যন্ত কোনো বিক্রয় রসিদ তৈরি হয়নি।</div>
+            <div className="text-center text-muted fs-8 py-3">নির্বাচিত সময়ের মধ্যে কোনো বিক্রয় রসিদ তৈরি হয়নি।</div>
           ) : (
             <div style={{ maxHeight: "250px", overflowY: "auto" }}>
               {todaySalesRecords.map((sale) => (
                 <div key={sale.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
                   <div>
-                    <div className="fw-semibold fs-7 font-monospace text-success">{sale.invoiceNumber}</div>
+                    <div className="fw-semibold fs-7 text-success">
+                      <CopyableText text={sale.invoiceNumber} />
+                    </div>
                     <small className="text-muted fs-9">
                       {sale.customerName || "খুচরা কাস্টমার"} • {sale.paymentMethod}
                     </small>
@@ -328,12 +499,240 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* DYNAMIC ACCORDION: Period Purchases List */}
+      {showTodayPurchasesList && (
+        <div className="card-custom bg-white border border-success-subtle p-3 mb-3 no-print">
+          <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+            <h5 className="h6 fw-bold text-success m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Purchases")} (ক্রয় চালানসমূহ)</h5>
+            <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowTodayPurchasesList(false)}></button>
+          </div>
+          
+          {todayPurchasesRecords.length === 0 ? (
+            <div className="text-center text-muted fs-8 py-3">নির্বাচিত সময়ের মধ্যে কোনো ক্রয় চালান তৈরি হয়নি।</div>
+          ) : (
+            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+              {todayPurchasesRecords.map((pur) => (
+                <div key={pur.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
+                  <div>
+                    <div className="fw-semibold fs-7 text-success">
+                      <CopyableText text={pur.invoiceNumber} />
+                    </div>
+                    <small className="text-muted fs-9">
+                      {pur.supplierName || "বেনামী সাপ্লায়ার"}
+                    </small>
+                  </div>
+                  <div className="text-end d-flex align-items-center gap-2">
+                    <div>
+                      <div className="fw-bold fs-7">{formatCurrency(pur.totalAmount)}</div>
+                      {pur.dueAmount > 0 && <small className="badge bg-danger-subtle text-danger fs-9 px-1">Due: {formatCurrency(pur.dueAmount)}</small>}
+                    </div>
+                    <button 
+                      className="btn btn-sm btn-outline-success p-1 py-0.5 fs-8 font-monospace"
+                      onClick={() => {
+                        setSelectedPurchase(pur);
+                        const modalEl = document.getElementById("purchaseModalDashboard");
+                        if (modalEl) {
+                          const modal = new window.bootstrap.Modal(modalEl);
+                          modal.show();
+                        }
+                      }}
+                    >
+                      View
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DYNAMIC ACCORDION: Period Expenses List */}
+      {showPeriodExpensesList && (
+        <div className="card-custom bg-white border border-danger-subtle p-3 mb-3 no-print">
+          <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+            <h5 className="h6 fw-bold text-danger m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Expenses")} (খরচের বিবরণী)</h5>
+            <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowPeriodExpensesList(false)}></button>
+          </div>
+          
+          {todayExpensesRecords.length === 0 ? (
+            <div className="text-center text-muted fs-8 py-3">নির্বাচিত সময়ের মধ্যে কোনো খরচ রেকর্ড করা হয়নি।</div>
+          ) : (
+            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+              {todayExpensesRecords.map((exp) => (
+                <div key={exp.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
+                  <div>
+                    <div className="fw-semibold fs-7 text-dark">{exp.category}</div>
+                    <small className="text-muted fs-9">
+                      {dayjs(exp.date).format("DD MMM YYYY")} • {exp.description || "দোকান খরচ"}
+                    </small>
+                  </div>
+                  <div className="text-end">
+                    <div className="fw-bold fs-7 text-danger">{formatCurrency(exp.amount)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DYNAMIC ACCORDION: Period Profit Breakdown */}
+      {showPeriodProfitBreakdown && (
+        <div className="card-custom bg-white border border-success-subtle p-3 mb-3 no-print">
+          <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+            <h5 className="h6 fw-bold text-success m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Profit Details")} (লাভের বিবরণী)</h5>
+            <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowPeriodProfitBreakdown(false)}></button>
+          </div>
+          <div className="fs-7 font-monospace">
+            <div className="d-flex justify-content-between fw-bold mb-2 border-bottom pb-1 text-secondary fs-8">
+              <span>SOURCE / INVOICE</span>
+              <span className="text-end">NET PROFIT</span>
+            </div>
+            <div style={{ maxHeight: "200px", overflowY: "auto" }} className="mb-3">
+              {todaySalesRecords.length === 0 && todayExpensesRecords.length === 0 ? (
+                <div className="text-center text-muted fs-8 py-3">কোনো বিক্রয় বা খরচ নেই।</div>
+              ) : (
+                <>
+                  {todaySalesRecords.map((sale) => {
+                    let costPriceTotal = 0;
+                    sale.items.forEach(item => {
+                      const prod = products.find(p => p.id === item.productId);
+                      const buyPrice = item.purchasePrice || (prod ? prod.purchasePrice : 0);
+                      costPriceTotal += buyPrice * item.quantity;
+                    });
+                    const profit = sale.payableAmount - costPriceTotal;
+                    return (
+                      <div key={sale.id} className="d-flex justify-content-between align-items-center py-1 border-bottom border-light">
+                        <div>
+                          <CopyableText text={sale.invoiceNumber} className="text-success fw-semibold" />
+                          <small className="text-muted d-block" style={{ fontSize: "10px" }}>{sale.customerName || "খুচরা কাস্টমার"}</small>
+                        </div>
+                        <span className="fw-semibold text-success">+{formatCurrency(profit)}</span>
+                      </div>
+                    );
+                  })}
+                  {todayExpensesRecords.map((exp) => (
+                    <div key={exp.id} className="d-flex justify-content-between align-items-center py-1 border-bottom border-light">
+                      <div>
+                        <span className="text-danger fw-semibold">{exp.category}</span>
+                        <small className="text-muted d-block" style={{ fontSize: "10px" }}>{exp.description || "খরচ"}</small>
+                      </div>
+                      <span className="fw-semibold text-danger">-{formatCurrency(exp.amount)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div className="border-top pt-2">
+              <div className="d-flex justify-content-between text-muted fs-8">
+                <span>Total Gross Sales Profit (বিক্রয় লাভ):</span>
+                <span className="text-success">+{formatCurrency(todayGrossProfit)}</span>
+              </div>
+              <div className="d-flex justify-content-between text-muted fs-8">
+                <span>Total Period Expenses (মোট খরচ):</span>
+                <span className="text-danger">-{formatCurrency(todayExpenseVal)}</span>
+              </div>
+              <div className="d-flex justify-content-between fw-bold border-top pt-1 mt-1 text-dark fs-6">
+                <span>Net Profit (নিট লাভ):</span>
+                <span className={todayNetProfit >= 0 ? "text-success" : "text-danger"}>{formatCurrency(todayNetProfit)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DYNAMIC ACCORDION: Low Stock Alerts List */}
+      {showLowStockList && (
+        <div className="card-custom bg-white border border-danger-subtle p-3 mb-3 no-print">
+          <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+            <h5 className="h6 fw-bold text-danger m-0 font-monospace">Low Stock Products (কম স্টক পণ্যসমূহ)</h5>
+            <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowLowStockList(false)}></button>
+          </div>
+          
+          {products.filter(p => p.stock <= (p.minStock || 0)).length === 0 ? (
+            <div className="text-center text-muted fs-8 py-3">বর্তমানে কোনো পণ্যের স্টক কম নেই।</div>
+          ) : (
+            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+              {products.filter(p => p.stock <= (p.minStock || 0)).map((prod) => (
+                <div key={prod.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
+                  <div>
+                    <div className="fw-semibold fs-7 text-dark">{prod.name}</div>
+                    <small className="text-danger fw-semibold fs-9">
+                      Stock: {prod.stock} {prod.unit} (Limit: {prod.minStock || 5})
+                    </small>
+                  </div>
+                  <button 
+                    className="btn btn-sm btn-outline-success p-1 py-0.5 fs-8 font-monospace"
+                    onClick={() => navigateTo("/purchases/new", { productId: prod.id })}
+                  >
+                    <i className="bi bi-bag-plus"></i> Re-order
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DYNAMIC ACCORDION: High-Risk Customer Dues List */}
+      {showHighRiskDues && (
+        <div className="card-custom bg-white border border-warning-subtle p-3 mb-3 no-print">
+          <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+            <h5 className="h6 fw-bold text-warning m-0 font-monospace">Top Debtor Balances (শীর্ষ বকেয়া খাতাসমূহ)</h5>
+            <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowHighRiskDues(false)}></button>
+          </div>
+          
+          {customers.filter(c => (c.due || 0) > 0).length === 0 ? (
+            <div className="text-center text-muted fs-8 py-3">বর্তমানে কোনো বকেয়া খাতা নেই।</div>
+          ) : (
+            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+              {customers
+                .filter(c => (c.due || 0) > 0)
+                .sort((a, b) => (b.due || 0) - (a.due || 0))
+                .slice(0, 5)
+                .map((cust) => (
+                  <div key={cust.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
+                    <div>
+                      <div className="fw-semibold fs-7 text-dark">{cust.name}</div>
+                      {cust.phone && <small className="text-muted font-monospace fs-9">{cust.phone}</small>}
+                    </div>
+                    <div className="text-end d-flex align-items-center gap-2">
+                      <span className="fw-bold fs-7 text-danger">{formatCurrency(cust.due)}</span>
+                      <button 
+                        className="btn btn-sm btn-outline-success p-1 py-0.5 fs-8 font-monospace"
+                        onClick={() => navigateTo("/khata", { partyId: cust.id, type: "customer" })}
+                      >
+                        Ledger
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="row g-3 mb-4">
         <div className="col-6">
-          <div className="card-custom bg-white border border-light p-3 h-100">
+          <div 
+            className="card-custom bg-white border border-light p-3 h-100 cursor-pointer pointer-active"
+            onClick={() => {
+              setShowTodayPurchasesList(!showTodayPurchasesList);
+              setShowTodaySalesList(false);
+              setShowPeriodExpensesList(false);
+              setShowPeriodProfitBreakdown(false);
+              setShowCashBreakdown(false);
+              setShowLowStockList(false);
+              setShowHighRiskDues(false);
+            }}
+            style={{ cursor: "pointer" }}
+          >
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <span className="fs-8 text-muted text-uppercase">Today's Purchase</span>
+              <span className="fs-8 text-muted text-uppercase d-flex align-items-center gap-1">
+                {getPeriodLabel(dashboardPeriod, "Purchase")} <i className={`bi ${showTodayPurchasesList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              </span>
               <div className="bg-light text-success rounded-circle p-1" style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="bi bi-bag-plus-fill fs-7"></i>
               </div>
@@ -343,9 +742,23 @@ export default function Dashboard() {
         </div>
         
         <div className="col-6">
-          <div className="card-custom bg-white border border-light p-3 h-100">
+          <div 
+            className="card-custom bg-white border border-light p-3 h-100 cursor-pointer pointer-active"
+            onClick={() => {
+              setShowPeriodExpensesList(!showPeriodExpensesList);
+              setShowTodaySalesList(false);
+              setShowTodayPurchasesList(false);
+              setShowPeriodProfitBreakdown(false);
+              setShowCashBreakdown(false);
+              setShowLowStockList(false);
+              setShowHighRiskDues(false);
+            }}
+            style={{ cursor: "pointer" }}
+          >
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <span className="fs-8 text-muted text-uppercase">Today's Expense</span>
+              <span className="fs-8 text-muted text-uppercase d-flex align-items-center gap-1">
+                {getPeriodLabel(dashboardPeriod, "Expense")} <i className={`bi ${showPeriodExpensesList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              </span>
               <div className="bg-light text-danger rounded-circle p-1" style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="bi bi-calculator-fill fs-7"></i>
               </div>
@@ -355,9 +768,23 @@ export default function Dashboard() {
         </div>
 
         <div className="col-6">
-          <div className="card-custom bg-white border border-light p-3 h-100">
+          <div 
+            className="card-custom bg-white border border-light p-3 h-100 cursor-pointer pointer-active"
+            onClick={() => {
+              setShowPeriodProfitBreakdown(!showPeriodProfitBreakdown);
+              setShowTodaySalesList(false);
+              setShowTodayPurchasesList(false);
+              setShowPeriodExpensesList(false);
+              setShowCashBreakdown(false);
+              setShowLowStockList(false);
+              setShowHighRiskDues(false);
+            }}
+            style={{ cursor: "pointer" }}
+          >
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <span className="fs-8 text-muted text-uppercase">Today's Profit</span>
+              <span className="fs-8 text-muted text-uppercase d-flex align-items-center gap-1">
+                {getPeriodLabel(dashboardPeriod, "Profit")} <i className={`bi ${showPeriodProfitBreakdown ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              </span>
               <div className="bg-light text-primary-custom rounded-circle p-1" style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="bi bi-cash-stack fs-7"></i>
               </div>
@@ -369,9 +796,23 @@ export default function Dashboard() {
         </div>
 
         <div className="col-6">
-          <div className="card-custom bg-white border border-light p-3 h-100" onClick={() => navigateTo("/khata")} style={{ cursor: "pointer" }}>
+          <div 
+            className="card-custom bg-white border border-light p-3 h-100 cursor-pointer pointer-active" 
+            onClick={() => {
+              setShowHighRiskDues(!showHighRiskDues);
+              setShowTodaySalesList(false);
+              setShowTodayPurchasesList(false);
+              setShowPeriodExpensesList(false);
+              setShowPeriodProfitBreakdown(false);
+              setShowLowStockList(false);
+              setShowCashBreakdown(false);
+            }} 
+            style={{ cursor: "pointer" }}
+          >
             <div className="d-flex align-items-center justify-content-between mb-2">
-              <span className="fs-8 text-muted text-uppercase">Total Customer Due</span>
+              <span className="fs-8 text-muted text-uppercase d-flex align-items-center gap-1">
+                Total Customer Due <i className={`bi ${showHighRiskDues ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              </span>
               <div className="bg-light text-warning rounded-circle p-1" style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="bi bi-exclamation-circle-fill fs-7"></i>
               </div>
@@ -392,9 +833,15 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="col-3">
+            <div className="card-quick-action" onClick={() => navigateTo("/purchases/new")}>
+              <i className="bi bi-bag-plus-fill text-success"></i>
+              <span className="fs-8">New Purchase</span>
+            </div>
+          </div>
+          <div className="col-3">
             <div className="card-quick-action" onClick={() => navigateTo("/products")}>
-              <i className="bi bi-plus-circle-fill text-success"></i>
-              <span className="fs-8">Add Prod</span>
+              <i className="bi bi-box-seam-fill text-success"></i>
+              <span className="fs-8">Products</span>
             </div>
           </div>
           <div className="col-3">
@@ -409,19 +856,57 @@ export default function Dashboard() {
               <span className="fs-8">Expense</span>
             </div>
           </div>
+          <div className="col-3">
+            <div className="card-quick-action" onClick={() => navigateTo("/suppliers")}>
+              <i className="bi bi-people-fill text-success"></i>
+              <span className="fs-8">Suppliers</span>
+            </div>
+          </div>
+          <div className="col-3">
+            <div className="card-quick-action" onClick={() => navigateTo("/customers")}>
+              <i className="bi bi-person-badge-fill text-success"></i>
+              <span className="fs-8">Customers</span>
+            </div>
+          </div>
+          <div className="col-3">
+            <div className="card-quick-action" onClick={() => navigateTo("/purchases")}>
+              <i className="bi bi-receipt text-success"></i>
+              <span className="fs-8">Purchases</span>
+            </div>
+          </div>
+          <div className="col-3">
+            <div className="card-quick-action" onClick={handleCopyDailyBlueprint} title="Copy Today's Daily Hisab Blueprint">
+              <i className="bi bi-file-earmark-text-fill text-primary"></i>
+              <span className="fs-8">Hisab Blueprint</span>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Stock Alerts & Stats */}
       <div className="row g-3 mb-4">
-        <div className="col-6" onClick={() => navigateTo("/products")} style={{ cursor: "pointer" }}>
+        <div 
+          className="col-6 cursor-pointer pointer-active" 
+          onClick={() => {
+            setShowLowStockList(!showLowStockList);
+            setShowTodaySalesList(false);
+            setShowTodayPurchasesList(false);
+            setShowPeriodExpensesList(false);
+            setShowPeriodProfitBreakdown(false);
+            setShowCashBreakdown(false);
+            setShowHighRiskDues(false);
+          }}
+          style={{ cursor: "pointer" }}
+        >
           <div className="card-custom bg-white border border-light p-3 d-flex align-items-center gap-3">
             <div className="rounded-circle bg-danger-subtle text-danger p-2 fs-5" style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <i className="bi bi-arrow-down-circle"></i>
             </div>
             <div>
               <h5 className="m-0 fw-bold">{lowStockCount}</h5>
-              <small className="text-muted fs-8">Low Stock Items</small>
+              <small className="text-muted fs-8 d-flex align-items-center gap-1">
+                Low Stock <i className={`bi ${showLowStockList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              </small>
             </div>
           </div>
         </div>
@@ -526,10 +1011,89 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Purchase Details Modal */}
+      <div 
+        className="modal fade no-print" 
+        id="purchaseModalDashboard" 
+        tabIndex="-1" 
+        aria-labelledby="purchaseModalDashboardLabel" 
+        aria-hidden="true"
+      >
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content border-0 shadow-lg" style={{ borderRadius: "16px" }}>
+            <div className="modal-header border-bottom border-light bg-light" style={{ borderTopLeftRadius: "16px", borderTopRightRadius: "16px" }}>
+              <h5 className="modal-title font-monospace" id="purchaseModalDashboardLabel">Purchase Invoice Details</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body p-4">
+              {selectedPurchase && (
+                <div>
+                  <div className="mb-3 text-center border-bottom pb-2">
+                    <h5 className="fw-bold">{selectedPurchase.supplierName || "বেনামী সাপ্লায়ার"}</h5>
+                    <p className="text-muted m-0 fs-8">চালান নং: <CopyableText text={selectedPurchase.invoiceNumber} /></p>
+                    <p className="text-muted m-0 fs-8">তারিখ: {dayjs(selectedPurchase.date).format("DD MMMM YYYY")}</p>
+                  </div>
+                  
+                  <h6 className="text-muted text-uppercase fs-8 font-monospace mb-2">Purchased Items</h6>
+                  <ul className="list-group list-group-flush mb-3">
+                    {selectedPurchase.items.map((item, idx) => (
+                      <li className="list-group-item d-flex justify-content-between align-items-center px-0 fs-7" key={idx}>
+                        <div>
+                          <div className="fw-semibold">{item.productName}</div>
+                          <small className="text-muted">ক্রয়মূল্য: {formatCurrency(item.purchasePrice)}</small>
+                        </div>
+                        <span className="badge bg-secondary font-monospace">{item.quantity} {item.unit}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="border-top pt-2">
+                    <div className="d-flex justify-content-between fs-7 mb-1 font-monospace">
+                      <span className="text-muted">Total Bill:</span>
+                      <span className="fw-bold">{formatCurrency(selectedPurchase.totalAmount)}</span>
+                    </div>
+                    <div className="d-flex justify-content-between fs-7 mb-1 font-monospace text-success">
+                      <span>Paid Amount:</span>
+                      <span className="fw-bold">{formatCurrency(selectedPurchase.paidAmount)}</span>
+                    </div>
+                    {selectedPurchase.dueAmount > 0 && (
+                      <div className="d-flex justify-content-between fs-7 text-danger font-monospace border-top pt-1 mt-1">
+                        <span>Due to Supplier:</span>
+                        <span className="fw-bold">{formatCurrency(selectedPurchase.dueAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer border-top border-light bg-light" style={{ borderBottomLeftRadius: "16px", borderBottomRightRadius: "16px" }}>
+              <button 
+                type="button" 
+                className="btn btn-custom btn-custom-secondary font-monospace" 
+                data-bs-dismiss="modal"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Hidden print container that shows only in @media print */}
       {selectedSale && (
         <div className="d-none d-print-block printable-invoice">
           <SalesInvoice sale={selectedSale} />
+        </div>
+      )}
+
+      {/* Toast Notification for Clipboard Copy */}
+      {toastConfig.show && (
+        <div 
+          className="position-fixed bottom-4 start-50 translate-middle-x bg-dark text-white px-3 py-2 rounded-3 shadow-lg d-flex align-items-center gap-2 animate-fade-in no-print" 
+          style={{ zIndex: 1050, bottom: "80px" }}
+        >
+          <i className="bi bi-check-circle-fill text-success"></i>
+          <span className="fs-7 fw-medium">{toastConfig.message}</span>
         </div>
       )}
     </div>

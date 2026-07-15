@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
+import CopyableText from "../components/CopyableText";
 
 export default function Purchases() {
   const { purchases, deletePurchaseItem, loading } = useData();
@@ -75,7 +76,7 @@ export default function Purchases() {
                   <tr key={pur.id}>
                     <td>
                       <div className="fw-semibold text-dark font-monospace" style={{ fontSize: "13px" }}>
-                        {pur.invoiceNumber}
+                        <CopyableText text={pur.invoiceNumber} />
                       </div>
                       <small className="text-muted" style={{ fontSize: "11px" }}>
                         {formatDate(pur.date, "DD/MM/YYYY")}
@@ -155,7 +156,7 @@ export default function Purchases() {
                 <div>
                   <div className="mb-3 text-center border-bottom pb-2">
                     <h5 className="fw-bold">{selectedPurchase.supplierName || "বেনামী সাপ্লায়ার"}</h5>
-                    <p className="text-muted m-0 fs-8">চালান নং: {selectedPurchase.invoiceNumber}</p>
+                    <p className="text-muted m-0 fs-8">চালান নং: <CopyableText text={selectedPurchase.invoiceNumber} /></p>
                     <p className="text-muted m-0 fs-8">তারিখ: {formatDate(selectedPurchase.date, "DD MMMM YYYY")}</p>
                   </div>
                   

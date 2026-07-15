@@ -30,6 +30,14 @@ export default function Settings() {
   // Active Tab state: 'shop' | 'manual-profile' | 'hisab-guide' | 'backup-reset'
   const [activeSettingsTab, setActiveSettingsTab] = useState("shop");
 
+  // Business Simulator State
+  const [simStock, setSimStock] = useState(10);
+  const [simCash, setSimCash] = useState(1000);
+  const [simCustomerDue, setSimCustomerDue] = useState(0);
+  const [simSupplierDue, setSimSupplierDue] = useState(0);
+  const [simProfit, setSimProfit] = useState(0);
+  const [simLog, setSimLog] = useState("সিমুলেটর চালু আছে। নিচে যেকোনো লেনদেন বোতামে ক্লিক করে লাইভ পরিবর্তন পর্যবেক্ষণ করুন।");
+
   // Shop Info Form state
   const [shopName, setShopName] = useState("");
   const [ownerName, setOwnerName] = useState("");
@@ -298,17 +306,25 @@ export default function Settings() {
 
   const todayPurchasesDocs = purchases.filter(p => !p.deleted && p.date === todayStr);
   const todayPurchasesCash = todayPurchasesDocs.reduce((acc, p) => acc + (p.paidAmount || 0), 0);
+  const todayPurchasesDues = todayPurchasesDocs.reduce((acc, p) => acc + (p.dueAmount || 0), 0);
 
   const todayExpensesDocs = expenses.filter(e => !e.deleted && e.date === todayStr);
   const todayExpensesTotal = todayExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
 
   const todayKhataCustomerPayments = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "customer" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
-  const todayKhataCustomerDues = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "customer" && k.type === "due").reduce((acc, k) => acc + (k.amount || 0), 0);
+  const todayKhataCustomerDues = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "customer" && k.type === "due" && !(k.description || "").includes("বিক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
   const todayKhataSupplierPayments = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "supplier" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
+  const todayKhataSupplierDues = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "supplier" && k.type === "due" && !(k.description || "").includes("ক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
 
   const todayCashReceived = todaySalesCash + todayKhataCustomerPayments;
   const todayCashPaid = todayPurchasesCash + todayKhataSupplierPayments + todayExpensesTotal;
   const todayNetCashHand = todayCashReceived - todayCashPaid;
+
+  const openingFloat = Number(localStorage.getItem("cash_opening_float") || 0);
+  const expectedDrawerCash = openingFloat + todayNetCashHand;
+
+  const netCustomerDueChange = (todaySalesDues + todayKhataCustomerDues) - todayKhataCustomerPayments;
+  const netSupplierDueChange = (todayPurchasesDues + todayKhataSupplierDues) - todayKhataSupplierPayments;
 
   // Monthly stats
   const monthSalesDocs = sales.filter(s => !s.deleted && s.date.startsWith(thisMonthStr));
@@ -332,23 +348,36 @@ export default function Settings() {
   // Copy blueprint functionality
   const handleCopyDailyBlueprint = () => {
     const text = `তারিখ: ${formatDate(todayStr, "DD MMMM YYYY")}
------------------------------
-১. মোট ক্যাশ জমা (Received Cash):
-- ক্যাশ বিক্রয়: ${formatCurrency(todaySalesCash)}
-- কাস্টমার বাকি আদায়: ${formatCurrency(todayKhataCustomerPayments)}
-মোট ক্যাশ সংগ্রহ: ${formatCurrency(todayCashReceived)}
+--------------------------------------------
+১. ক্যাশ ড্রয়ার বিবরণী (Cash Drawer Statement)
+--------------------------------------------
+(+) প্রারম্ভিক ক্যাশ ফ্লোট (Opening Cash): ${formatCurrency(openingFloat)}
+(+) নগদ ও ক্যাশ বিক্রয় (Cash Sales): ${formatCurrency(todaySalesCash)}
+(+) কাস্টমার থেকে বকেয়া আদায় (Payment In): ${formatCurrency(todayKhataCustomerPayments)}
+(-) পাইকারি নগদ ক্রয় (Wholesale Paid): ${formatCurrency(todayPurchasesCash)}
+(-) সাপ্লায়ারকে বকেয়া পরিশোধ (Payment Out): ${formatCurrency(todayKhataSupplierPayments)}
+(-) দোকান পরিচালন খরচ (Operating Expenses): ${formatCurrency(todayExpensesTotal)}
+--------------------------------------------
+(=) নিট ক্যাশ ফ্লো (Net Cash Flow): ${formatCurrency(todayNetCashHand)}
+(=) বাক্সে নগদ থাকা উচিত (Closing Cash): ${formatCurrency(expectedDrawerCash)}
 
-২. মোট ক্যাশ খরচ (Paid Cash):
-- পাইকারি ক্রয় পেমেন্ট: ${formatCurrency(todayPurchasesCash)}
-- সাপ্লায়ারকে পেমেন্ট: ${formatCurrency(todayKhataSupplierPayments)}
-- দোকান পরিচালন খরচ: ${formatCurrency(todayExpensesTotal)}
-মোট ক্যাশ প্রদান: ${formatCurrency(todayCashPaid)}
+--------------------------------------------
+২. কাস্টমার বকেয়া বিবরণী (Customer Credit Ledger)
+--------------------------------------------
+(+) আজকের নতুন বাকি বিক্রয় (Invoice Credit): ${formatCurrency(todaySalesDues)}
+(+) ম্যানুয়াল বাকি খাতা এন্ট্রি (Khata Dues): ${formatCurrency(todayKhataCustomerDues)}
+(-) কাস্টমার থেকে বকেয়া আদায় (Dues Collected): ${formatCurrency(todayKhataCustomerPayments)}
+--------------------------------------------
+(=) নিট কাস্টমার বকেয়া পরিবর্তন (Net Due Change): ${formatCurrency(netCustomerDueChange)}
 
-৩. ক্যাশবাক্স ক্লোজিং (Cash in Hand):
-আজকের নেট ক্যাশ ব্যালেন্স: ${formatCurrency(todayNetCashHand)}
-
-৪. আজকের নতুন বাকি (New Dues Added):
-কাস্টমারদের আজকের নতুন বাকি: ${formatCurrency(todaySalesDues + todayKhataCustomerDues)}`;
+--------------------------------------------
+৩. সাপ্লায়ার দেনা বিবরণী (Supplier Accounts Payable)
+--------------------------------------------
+(+) আজকের নতুন মহাজন বাকি ক্রয় (Invoice Credit): ${formatCurrency(todayPurchasesDues)}
+(+) ম্যানুয়াল মহাজন দেনা এন্ট্রি (Khata Dues): ${formatCurrency(todayKhataSupplierDues)}
+(-) মহাজন বকেয়া দেনাশোধ (Dues Paid): ${formatCurrency(todayKhataSupplierPayments)}
+--------------------------------------------
+(=) নিট মহাজন দেনা পরিবর্তন (Net Payable Change): ${formatCurrency(netSupplierDueChange)}`;
 
     navigator.clipboard.writeText(text);
     setModalConfig({
@@ -356,6 +385,65 @@ export default function Settings() {
       title: "কপি সম্পন্ন (Clipboard Copied)",
       message: "দৈনিক কাগজে খাতা লেখার হিসেব বিবরণী আপনার মোবাইলের মেমরিতে কপি করা হয়েছে। ডায়েরি খোলার পর আপনি এটি দেখে সহজে লিখতে পারবেন।"
     });
+  };
+
+  // Business Simulator Handlers
+  const handleSimulateSale = () => {
+    if (simStock < 5) {
+      setSimLog("ত্রুটি: সিমুলেটরে যথেষ্ট স্টক নেই! নতুন পণ্য ক্রয় (Purchase) করে স্টক বাড়ান।");
+      return;
+    }
+    setSimStock(prev => prev - 5);
+    setSimCash(prev => prev + 1000);
+    setSimCustomerDue(prev => prev + 500);
+    setSimProfit(prev => prev + 1000);
+    setSimLog("বিক্রয় সিমুলেশন সফল!\n৫টি পণ্য বিক্রয় করা হয়েছে। মোট বিল: ৳১,৫০০।\nনগদ পরিশোধ: +৳১,০০০ (ক্যাশ বাক্সে নগদ বাড়লো), কাস্টমার বকেয়া: +৳৫০০ (খাতা দেনা বাড়লো)।\nলাভ: +৳১,০০০ (৳১,৫০০ বিক্রয় - ৳৫০০ স্টক পণ্য খরচ)।");
+  };
+
+  const handleSimulatePurchase = () => {
+    if (simCash < 800) {
+      setSimLog("ত্রুটি: সিমুলেটরে ক্যাশ বক্সের টাকা অপর্যাপ্ত! বিক্রয় করে ক্যাশ বাড়ান।");
+      return;
+    }
+    setSimStock(prev => prev + 5);
+    setSimCash(prev => prev - 800);
+    setSimSupplierDue(prev => prev + 200);
+    setSimLog("ক্রয় সিমুলেশন সফল!\n৫টি নতুন পণ্য ক্রয় করা হয়েছে (স্টক +৫)। মোট বিল: ৳১,০০০।\nনগদ পরিশোধ: -৳৮০০ (ক্যাশ ড্রয়ার কমলো), মহাজন বকেয়া: +৳২০০ (দেনা বাড়লো)।");
+  };
+
+  const handleSimulateCollection = () => {
+    if (simCustomerDue <= 0) {
+      setSimLog("সতর্কতা: কাস্টমারদের কোনো বকেয়া নেই! বিক্রয় করে বকেয়া খাতা তৈরি করুন।");
+      return;
+    }
+    const amt = Math.min(500, simCustomerDue);
+    setSimCustomerDue(prev => prev - amt);
+    setSimCash(prev => prev + amt);
+    setSimLog(`বকেয়া আদায় সিমুলেশন সফল!\nকাস্টমার থেকে বকেয়া আদায় করা হয়েছে: ৳${amt}।\nক্যাশ জমা: +৳${amt} (ক্যাশ ড্রয়ার বাড়লো), কাস্টমার বকেয়া: -৳${amt} (কাস্টমারের বকেয়া খাতা কমলো)।`);
+  };
+
+  const handleSimulatePayment = () => {
+    if (simSupplierDue <= 0) {
+      setSimLog("সতর্কতা: মহাজনের কোনো দেনা বা বকেয়া নেই!");
+      return;
+    }
+    if (simCash < 200) {
+      setSimLog("ত্রুটি: পরিশোধের জন্য ক্যাশ বাক্সে যথেষ্ট টাকা নেই!");
+      return;
+    }
+    const amt = Math.min(200, simSupplierDue);
+    setSimSupplierDue(prev => prev - amt);
+    setSimCash(prev => prev - amt);
+    setSimLog(`মহাজন দেনাশোধ সিমুলেশন সফল!\nসাপ্লায়ারকে বকেয়া পরিশোধ করা হয়েছে: ৳${amt}।\nনগদ পরিশোধ: -৳${amt} (ক্যাশ ড্রয়ার কমলো), সাপ্লায়ার দেনা: -৳${amt} (মহাজন খাতার দেনা কমলো)।`);
+  };
+
+  const handleSimulateReset = () => {
+    setSimStock(10);
+    setSimCash(1000);
+    setSimCustomerDue(0);
+    setSimSupplierDue(0);
+    setSimProfit(0);
+    setSimLog("সিমুলেটর রিসেট করা হয়েছে। শুরুর অবস্থায় ফিরে এসেছে।");
   };
 
   // Render Layout
@@ -394,7 +482,7 @@ export default function Settings() {
             className={`nav-link flex-grow-1 py-2 font-monospace fs-8 text-nowrap ${activeSettingsTab === "hisab-guide" ? "active bg-success text-white" : "text-secondary"}`}
             onClick={() => setActiveSettingsTab("hisab-guide")}
           >
-            <i className="bi bi-journal-richtext"></i> Physical Hisab Guide
+            <i className="bi bi-journal-richtext"></i> Learning & Guide
           </button>
 
           <button 
@@ -606,6 +694,104 @@ export default function Settings() {
       {/* TAB CONTENT: 3. DYNAMIC HISAB GUIDE (HIGH READABILITY LEDGER DESIGN) */}
       {activeSettingsTab === "hisab-guide" && (
         <div className="hisab-guide-section animate__animated animate__fadeIn">
+          {/* Interactive Business Simulator Card */}
+          <div className="card-custom bg-white border border-primary p-3 mb-4">
+            <h4 className="h6 text-primary text-uppercase mb-2 font-monospace fw-bold d-flex align-items-center gap-1">
+              <i className="bi bi-play-circle-fill"></i> Interactive Business Simulator (লাইভ ব্যবসা সিমুলেটর)
+            </h4>
+            <p className="text-muted fs-8 mb-3">
+              নিচে একটি কাল্পনিক দোকানের উদাহরণ দিয়ে লাইভ ডেমো দেখানো হলো। বোতামগুলোতে ক্লিক করে দেখুন কিভাবে বিক্রয়, ক্রয়, এবং বকেয়া লেনদেন আপনার ক্যাশ, স্টক ও খাতার ব্যালেন্সকে পরিবর্তন করে।
+            </p>
+
+            {/* Live Board Grid */}
+            <div className="row g-2 mb-3 text-center">
+              <div className="col-4">
+                <div className="p-2 border rounded bg-light">
+                  <small className="text-muted d-block fs-9 text-uppercase font-monospace text-truncate">Stock (পণ্য স্টক)</small>
+                  <span className="fw-bold text-dark fs-7">{simStock} Pcs</span>
+                </div>
+              </div>
+              <div className="col-4">
+                <div className="p-2 border rounded bg-light">
+                  <small className="text-muted d-block fs-9 text-uppercase font-monospace text-truncate">Cash (ক্যাশ বাক্স)</small>
+                  <span className="fw-bold text-success fs-7">৳{simCash}</span>
+                </div>
+              </div>
+              <div className="col-4">
+                <div className="p-2 border rounded bg-light">
+                  <small className="text-muted d-block fs-9 text-uppercase font-monospace text-truncate">Cust. Due (বকেয়া)</small>
+                  <span className="fw-bold text-warning fs-7">৳{simCustomerDue}</span>
+                </div>
+              </div>
+              <div className="col-6">
+                <div className="p-2 border rounded bg-light">
+                  <small className="text-muted d-block fs-9 text-uppercase font-monospace text-truncate">Supp. Due (দেনা)</small>
+                  <span className="fw-bold text-danger fs-7">৳{simSupplierDue}</span>
+                </div>
+              </div>
+              <div className="col-6">
+                <div className="p-2 border rounded bg-light">
+                  <small className="text-muted d-block fs-9 text-uppercase font-monospace text-truncate">Net Profit (লাভ)</small>
+                  <span className="fw-bold text-primary fs-7">৳{simProfit}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Simulation Action Controls */}
+            <div className="d-flex flex-wrap gap-2 mb-3 justify-content-center">
+              <button 
+                type="button" 
+                className="btn btn-sm btn-outline-success font-monospace py-1.5 fs-8 flex-grow-1 flex-sm-grow-0"
+                onClick={handleSimulateSale}
+              >
+                <i className="bi bi-cart-plus-fill"></i> Simulate Sale (বিক্রি)
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-sm btn-outline-danger font-monospace py-1.5 fs-8 flex-grow-1 flex-sm-grow-0"
+                onClick={handleSimulatePurchase}
+              >
+                <i className="bi bi-bag-plus-fill"></i> Simulate Purchase (ক্রয়)
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-sm btn-outline-warning text-dark font-monospace py-1.5 fs-8 flex-grow-1 flex-sm-grow-0"
+                onClick={handleSimulateCollection}
+              >
+                <i className="bi bi-person-fill-check"></i> Collect Dues (বকেয়া আদায়)
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-sm btn-outline-primary font-monospace py-1.5 fs-8 flex-grow-1 flex-sm-grow-0"
+                onClick={handleSimulatePayment}
+              >
+                <i className="bi bi-wallet2"></i> Pay Supplier (দেনা শোধ)
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-sm btn-secondary font-monospace py-1.5 fs-8 flex-grow-1 flex-sm-grow-0"
+                onClick={handleSimulateReset}
+              >
+                <i className="bi bi-arrow-counterclockwise"></i> Reset
+              </button>
+            </div>
+
+            {/* Typewriter Terminal Console */}
+            <div 
+              className="p-3 rounded border border-secondary-subtle font-monospace text-dark fs-8 position-relative shadow-sm"
+              style={{ 
+                backgroundColor: "#fafafa", 
+                borderLeft: "4px solid #0d6efd", 
+                minHeight: "80px",
+                whiteSpace: "pre-line",
+                lineHeight: "1.5"
+              }}
+            >
+              <span className="position-absolute top-0 end-0 badge bg-primary text-white font-monospace fs-9 m-1 d-none d-sm-inline">Console Log</span>
+              {simLog}
+            </div>
+          </div>
+
           {/* Dynamic Daily Entry copy card */}
           <div className="card-custom bg-white border border-success p-3 mb-4">
             <div className="d-flex justify-content-between align-items-start mb-3">
@@ -641,78 +827,94 @@ export default function Settings() {
                 <span className="badge bg-success-subtle text-success fs-9 border border-success-subtle">দৈনিক ব্লুপ্রিন্ট</span>
               </div>
 
-              {/* 1. Received Cash Block */}
+              {/* 1. Cash Drawer Statement */}
               <div className="mb-4">
                 <h5 className="h7 text-dark fw-bold border-bottom pb-1 mb-2 d-flex align-items-center gap-1">
-                  <i className="bi bi-plus-circle text-success"></i> ১. ক্যাশ জমা (নগদ আদায়সমূহ)
+                  <i className="bi bi-wallet2 text-success"></i> ১. ক্যাশ ড্রয়ার বিবরণী (Cash Statement)
                 </h5>
+                <div className="d-flex justify-content-between py-1 fs-7 text-secondary">
+                  <span>প্রারম্ভিক ক্যাশ ফ্লোট (Opening Cash)</span>
+                  <span className="font-monospace">{formatCurrency(openingFloat)}</span>
+                </div>
                 <div className="d-flex justify-content-between py-1 fs-7">
-                  <span>নগদ ও ক্যাশ বিক্রয় (Cash Sales)</span>
-                  <span className="fw-bold text-success font-monospace">+{formatCurrency(todaySalesCash)}</span>
+                  <span>(+) নগদ ও ক্যাশ বিক্রয় (Cash Sales)</span>
+                  <span className="fw-semibold text-success font-monospace">+{formatCurrency(todaySalesCash)}</span>
                 </div>
                 <div className="d-flex justify-content-between py-1 fs-7 border-bottom border-light">
-                  <span>কাস্টমার থেকে বকেয়া আদায় (Payment In)</span>
-                  <span className="fw-bold text-success font-monospace">+{formatCurrency(todayKhataCustomerPayments)}</span>
-                </div>
-                <div className="d-flex justify-content-between py-2 fs-7 fw-bold" style={{ backgroundColor: "#f1fbf3", padding: "0 8px", borderRadius: "4px" }}>
-                  <span className="text-success">মোট সংগ্রহকৃত ক্যাশ টাকা (Total In)</span>
-                  <span className="font-monospace text-success">{formatCurrency(todayCashReceived)}</span>
-                </div>
-              </div>
-
-              {/* 2. Paid Cash Block */}
-              <div className="mb-4">
-                <h5 className="h7 text-dark fw-bold border-bottom pb-1 mb-2 d-flex align-items-center gap-1">
-                  <i className="bi bi-dash-circle text-danger"></i> ২. ক্যাশ খরচ (নগদ প্রদানসমূহ)
-                </h5>
-                <div className="d-flex justify-content-between py-1 fs-7">
-                  <span>পাইকারি ক্রয় নগদ পরিশোধ (Wholesale)</span>
-                  <span className="fw-bold text-danger font-monospace">-{formatCurrency(todayPurchasesCash)}</span>
+                  <span>(+) কাস্টমার থেকে বকেয়া আদায় (Payment In)</span>
+                  <span className="fw-semibold text-success font-monospace">+{formatCurrency(todayKhataCustomerPayments)}</span>
                 </div>
                 <div className="d-flex justify-content-between py-1 fs-7">
-                  <span>সাপ্লায়ারকে বকেয়া প্রদান (Payment Out)</span>
-                  <span className="fw-bold text-danger font-monospace">-{formatCurrency(todayKhataSupplierPayments)}</span>
+                  <span>(-) পাইকারি নগদ ক্রয় (Wholesale Paid)</span>
+                  <span className="fw-semibold text-danger font-monospace">-{formatCurrency(todayPurchasesCash)}</span>
+                </div>
+                <div className="d-flex justify-content-between py-1 fs-7">
+                  <span>(-) সাপ্লায়ারকে বকেয়া পরিশোধ (Payment Out)</span>
+                  <span className="fw-semibold text-danger font-monospace">-{formatCurrency(todayKhataSupplierPayments)}</span>
                 </div>
                 <div className="d-flex justify-content-between py-1 fs-7 border-bottom border-light">
-                  <span>দোকানের পরিচালন ও বিবিধ খরচ (Expenses)</span>
-                  <span className="fw-bold text-danger font-monospace">-{formatCurrency(todayExpensesTotal)}</span>
+                  <span>(-) দোকান পরিচালন খরচ (Expenses)</span>
+                  <span className="fw-semibold text-danger font-monospace">-{formatCurrency(todayExpensesTotal)}</span>
                 </div>
-                <div className="d-flex justify-content-between py-2 fs-7 fw-bold" style={{ backgroundColor: "#fef2f2", padding: "0 8px", borderRadius: "4px" }}>
-                  <span className="text-danger">মোট খরচকৃত ক্যাশ টাকা (Total Out)</span>
-                  <span className="font-monospace text-danger">{formatCurrency(todayCashPaid)}</span>
+                <div className="d-flex justify-content-between py-1.5 fs-7 border-bottom border-light">
+                  <span>নিট ক্যাশ ফ্লো (Net Cash Flow)</span>
+                  <span className={`fw-bold font-monospace ${todayNetCashHand >= 0 ? "text-success" : "text-danger"}`}>
+                    {todayNetCashHand >= 0 ? "+" : ""}{formatCurrency(todayNetCashHand)}
+                  </span>
+                </div>
+                <div className="d-flex justify-content-between py-2 fs-7 fw-bold" style={{ backgroundColor: "#eff6ff", padding: "0 8px", borderRadius: "4px" }}>
+                  <span className="text-primary">ড্রয়ারে নগদ থাকা উচিত (Expected Drawer Cash)</span>
+                  <span className="font-monospace text-primary">{formatCurrency(expectedDrawerCash)}</span>
                 </div>
               </div>
 
-              {/* 3. Cash in Hand closing */}
+              {/* 2. Customer Credit Ledger Summary */}
               <div className="mb-4">
                 <h5 className="h7 text-dark fw-bold border-bottom pb-1 mb-2 d-flex align-items-center gap-1">
-                  <i className="bi bi-wallet2 text-primary"></i> ৩. ক্যাশবাক্স ক্লোজিং (নগদ ব্যালেন্স)
+                  <i className="bi bi-journal-x text-warning"></i> ২. কাস্টমার বকেয়া বিবরণী (Customer Ledger)
                 </h5>
-                <div className="d-flex justify-content-between align-items-center py-2 px-2 fw-bold rounded" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-                  <span className="text-primary fs-7">বাক্সে নগদ থাকা উচিত (Cash in Hand)</span>
-                  <span className="fs-6 font-monospace text-primary">{formatCurrency(todayNetCashHand)}</span>
+                <div className="d-flex justify-content-between py-1 fs-7">
+                  <span>(+) আজকের নতুন বাকি বিক্রয় (Invoice Credit)</span>
+                  <span className="fw-semibold font-monospace">+{formatCurrency(todaySalesDues)}</span>
                 </div>
-                <div className="text-muted fs-9 mt-1 italic text-end">
-                  *{todayNetCashHand >= 0 ? "আজকের ক্যাশ বাক্সে অতিরিক্ত ৳" + todayNetCashHand + " জমা হবে।" : "ক্যাশ ঘাটতি: বাক্সে ৳" + Math.abs(todayNetCashHand) + " কম থাকতে হবে।"}
+                <div className="d-flex justify-content-between py-1 fs-7">
+                  <span>(+) ম্যানুয়াল বাকি খাতা এন্ট্রি (Khata Dues)</span>
+                  <span className="fw-semibold font-monospace">+{formatCurrency(todayKhataCustomerDues)}</span>
+                </div>
+                <div className="d-flex justify-content-between py-1 fs-7 border-bottom border-light">
+                  <span>(-) কাস্টমার থেকে বকেয়া আদায় (Dues Collected)</span>
+                  <span className="fw-semibold text-success font-monospace">-{formatCurrency(todayKhataCustomerPayments)}</span>
+                </div>
+                <div className="d-flex justify-content-between py-2 fs-7 fw-bold rounded" style={{ backgroundColor: "#fffbeb", padding: "0 8px" }}>
+                  <span className="text-warning-emphasis">নিট বকেয়া পরিবর্তন (Net Due Change)</span>
+                  <span className={`font-monospace ${netCustomerDueChange >= 0 ? "text-danger" : "text-success"}`}>
+                    {netCustomerDueChange >= 0 ? "+" : ""}{formatCurrency(netCustomerDueChange)}
+                  </span>
                 </div>
               </div>
 
-              {/* 4. Due Additions */}
+              {/* 3. Supplier Accounts Payable Summary */}
               <div>
                 <h5 className="h7 text-dark fw-bold border-bottom pb-1 mb-2 d-flex align-items-center gap-1">
-                  <i className="bi bi-journal-x text-warning"></i> ৪. বাকি বিক্রয় হিসাব (Credit Ledger)
+                  <i className="bi bi-people-fill text-danger"></i> ৩. সাপ্লায়ার দেনা বিবরণী (Supplier Payable)
                 </h5>
                 <div className="d-flex justify-content-between py-1 fs-7">
-                  <span>আজকের রসিদ বাকি বিক্রয়</span>
-                  <span className="fw-semibold font-monospace">{formatCurrency(todaySalesDues)}</span>
+                  <span>(+) নতুন মহাজন বাকি ক্রয় (Invoice Credit)</span>
+                  <span className="fw-semibold font-monospace">+{formatCurrency(todayPurchasesDues)}</span>
+                </div>
+                <div className="d-flex justify-content-between py-1 fs-7">
+                  <span>(+) ম্যানুয়াল মহাজন দেনা এন্ট্রি (Khata Dues)</span>
+                  <span className="fw-semibold font-monospace">+{formatCurrency(todayKhataSupplierDues)}</span>
                 </div>
                 <div className="d-flex justify-content-between py-1 fs-7 border-bottom border-light">
-                  <span>লেজার খাতার নতুন বাকি এন্ট্রি</span>
-                  <span className="fw-semibold font-monospace">{formatCurrency(todayKhataCustomerDues)}</span>
+                  <span>(-) মহাজন বকেয়া দেনাশোধ (Dues Paid)</span>
+                  <span className="fw-semibold text-success font-monospace">-{formatCurrency(todayKhataSupplierPayments)}</span>
                 </div>
-                <div className="d-flex justify-content-between py-2 fs-7 fw-bold text-secondary">
-                  <span>কাস্টমারদের মোট নতুন বাকি ঋণ</span>
-                  <span className="font-monospace text-dark">{formatCurrency(todaySalesDues + todayKhataCustomerDues)}</span>
+                <div className="d-flex justify-content-between py-2 fs-7 fw-bold rounded" style={{ backgroundColor: "#fef2f2", padding: "0 8px" }}>
+                  <span className="text-danger">নিট মহাজন দেনা পরিবর্তন (Net Payable Change)</span>
+                  <span className={`font-monospace ${netSupplierDueChange >= 0 ? "text-danger" : "text-success"}`}>
+                    {netSupplierDueChange >= 0 ? "+" : ""}{formatCurrency(netSupplierDueChange)}
+                  </span>
                 </div>
               </div>
             </div>

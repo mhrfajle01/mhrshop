@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency } from "../utils/formatters";
@@ -12,10 +12,30 @@ export default function PurchasesNew() {
     addNewPurchase, 
     addNewSupplier 
   } = useData();
-  const { navigateTo } = useRouter();
+  const { navigateTo, routeParams } = useRouter();
 
   // Cart State
   const [cart, setCart] = useState([]);
+
+  // Auto-fill product from route parameter (e.g. when buying from Low Stock alerts)
+  useEffect(() => {
+    if (routeParams && routeParams.productId && products.length > 0) {
+      const prod = products.find(p => p.id === routeParams.productId);
+      if (prod) {
+        const inCart = cart.some(item => item.productId === prod.id);
+        if (!inCart) {
+          setCart(prevCart => [...prevCart, {
+            productId: prod.id,
+            productName: prod.name,
+            purchasePrice: prod.purchasePrice || 0,
+            sellingPrice: prod.sellingPrice || 0,
+            quantity: 1,
+            unit: prod.unit || "Piece"
+          }]);
+        }
+      }
+    }
+  }, [routeParams, products]);
   
   // Search & Filters
   const [productQuery, setProductQuery] = useState("");
@@ -77,6 +97,13 @@ export default function PurchasesNew() {
     const newPrice = Math.max(0, Number(buyPrice));
     setCart(cart.map(i => 
       i.productId === productId ? { ...i, purchasePrice: newPrice } : i
+    ));
+  };
+
+  const updateCartSellingPrice = (productId, sellPrice) => {
+    const newPrice = Math.max(0, Number(sellPrice));
+    setCart(cart.map(i => 
+      i.productId === productId ? { ...i, sellingPrice: newPrice } : i
     ));
   };
 
@@ -246,46 +273,71 @@ export default function PurchasesNew() {
             ) : (
               <div className="cart-list" style={{ maxHeight: "300px", overflowY: "auto" }}>
                 {cart.map((item) => (
-                  <div key={item.productId} className="pos-item-row">
-                    <div className="pe-2" style={{ width: "40%" }}>
-                      <div className="fw-semibold fs-7 text-truncate">{item.productName}</div>
+                  <div key={item.productId} className="pos-item-row d-flex align-items-center py-2 border-bottom border-light">
+                    <div className="pe-2" style={{ width: "30%" }}>
+                      <div className="fw-semibold fs-7 text-truncate" title={item.productName}>{item.productName}</div>
                       <span className="text-muted fs-9">{item.unit}</span>
+                      {Number(item.purchasePrice) >= Number(item.sellingPrice) && (
+                        <div className="badge bg-warning-subtle text-warning-emphasis fs-10 p-1 mt-1 text-wrap text-start" style={{ lineHeight: "1.1", maxWidth: "100%" }}>
+                          <i className="bi bi-exclamation-triangle-fill"></i> Buy ≥ Sell
+                        </div>
+                      )}
                     </div>
                     
-                    <div className="d-flex align-items-center justify-content-center" style={{ width: "30%" }}>
+                    <div className="d-flex align-items-center justify-content-center" style={{ width: "25%" }}>
                       <button 
                         className="btn btn-sm btn-light border p-1"
+                        style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}
                         onClick={() => updateCartQty(item.productId, item.quantity - 1)}
                       >
                         -
                       </button>
                       <input 
                         type="number" 
-                        className="pos-input mx-1 fs-7"
+                        className="pos-input mx-1 fs-7 text-center font-monospace"
+                        style={{ width: "35px" }}
                         value={item.quantity}
                         onChange={(e) => updateCartQty(item.productId, e.target.value)}
                       />
                       <button 
                         className="btn btn-sm btn-light border p-1"
+                        style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}
                         onClick={() => updateCartQty(item.productId, item.quantity + 1)}
                       >
                         +
                       </button>
                     </div>
 
-                    <div className="d-flex align-items-center justify-content-end text-end" style={{ width: "30%" }}>
-                      <div className="me-2">
+                    <div className="d-flex align-items-center justify-content-end text-end" style={{ width: "20%" }}>
+                      <div className="me-1">
+                        <label className="text-muted font-monospace" style={{ fontSize: "9px", display: "block" }}>Buy ৳</label>
                         <input 
                           type="number" 
                           className="pos-input text-end fs-7 font-monospace"
-                          style={{ width: "70px" }}
+                          style={{ width: "65px" }}
                           value={item.purchasePrice}
                           onChange={(e) => updateCartPrice(item.productId, e.target.value)}
                         />
-                        <small className="d-block text-muted" style={{ fontSize: "9px" }}>Total: {formatCurrency(item.purchasePrice * item.quantity)}</small>
+                        <small className="d-block text-muted" style={{ fontSize: "9px" }}>Tot: {formatCurrency(item.purchasePrice * item.quantity)}</small>
                       </div>
+                    </div>
+
+                    <div className="d-flex align-items-center justify-content-end text-end" style={{ width: "20%" }}>
+                      <div>
+                        <label className="text-muted font-monospace" style={{ fontSize: "9px", display: "block" }}>Sell ৳</label>
+                        <input 
+                          type="number" 
+                          className="pos-input text-end fs-7 font-monospace"
+                          style={{ width: "65px" }}
+                          value={item.sellingPrice}
+                          onChange={(e) => updateCartSellingPrice(item.productId, e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="d-flex align-items-center justify-content-end text-end" style={{ width: "5%" }}>
                       <button 
-                        className="btn btn-sm btn-outline-danger border-0 p-1"
+                        className="btn btn-sm btn-outline-danger border-0 p-1 ms-1"
                         onClick={() => removeFromCart(item.productId)}
                       >
                         <i className="bi bi-trash"></i>

@@ -1,14 +1,19 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
-import { formatCurrency } from "../utils/formatters";
+import { formatCurrency, formatDate } from "../utils/formatters";
+import dayjs from "dayjs";
+import { CopyableTextParser } from "../components/CopyableText";
 
 export default function Suppliers() {
   const { 
     suppliers, 
+    purchases,
+    khata,
     addNewSupplier, 
     updateSupplierItem, 
     deleteSupplierItem, 
+    addNewKhataEntry,
     loading 
   } = useData();
   const { navigateTo } = useRouter();
@@ -26,6 +31,15 @@ export default function Suppliers() {
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Ledger Profile Drawer/Modal State
+  const [activeLedgerSupplier, setActiveLedgerSupplier] = useState(null);
+  const [ledgerPaymentAmount, setLedgerPaymentAmount] = useState("");
+  const [ledgerPaymentDesc, setLedgerPaymentDesc] = useState("");
+  const [ledgerPaymentDate, setLedgerPaymentDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [paymentSuccess, setPaymentSuccess] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
 
   const handleEdit = (supp) => {
     setEditingId(supp.id);
@@ -90,6 +104,72 @@ export default function Suppliers() {
         alert("সাপ্লায়ার মুছতে ব্যর্থ হয়েছে।");
       }
     }
+  };
+
+  const handleSaveLedgerPayment = async (e) => {
+    e.preventDefault();
+    if (isSavingPayment || !activeLedgerSupplier) return;
+    setPaymentError("");
+    setPaymentSuccess("");
+
+    const payAmt = Number(ledgerPaymentAmount);
+    if (!payAmt || payAmt <= 0) {
+      setPaymentError("অনুগ্রহ করে পরিশোধের সঠিক পরিমাণ লিখুন।");
+      return;
+    }
+
+    try {
+      setIsSavingPayment(true);
+      await addNewKhataEntry({
+        partyId: activeLedgerSupplier.id,
+        partyType: "supplier",
+        partyName: activeLedgerSupplier.name,
+        type: "payment", // paid to supplier
+        amount: payAmt,
+        description: ledgerPaymentDesc.trim() || "মহাজন পরিশোধ (সাপ্লায়ার খাতা থেকে সরাসরি পরিশোধ)",
+        date: ledgerPaymentDate
+      });
+      setIsSavingPayment(false);
+      setLedgerPaymentAmount("");
+      setLedgerPaymentDesc("");
+      setPaymentSuccess("৳" + payAmt + " পরিশোধ সফলভাবে রেকর্ড করা হয়েছে।");
+    } catch (err) {
+      setIsSavingPayment(false);
+      setPaymentError("পরিশোধ রেকর্ড করতে ব্যর্থ হয়েছে।");
+    }
+  };
+
+  const getLedgerRecords = (supplier) => {
+    if (!supplier) return [];
+    
+    // Get purchases for this supplier
+    const supplierPurchases = purchases
+      .filter(p => !p.deleted && p.supplierId === supplier.id)
+      .map(p => ({
+        id: p.id,
+        date: p.date,
+        type: "purchase",
+        label: `ক্রয় চালান: ${p.invoiceNumber}`,
+        debit: p.totalAmount, // we owe (added due)
+        credit: p.paidAmount, // we paid at purchase
+        raw: p
+      }));
+
+    // Get khata ledger entries for this supplier
+    const supplierKhata = khata
+      .filter(k => !k.deleted && k.partyId === supplier.id && k.partyType === "supplier")
+      .map(k => ({
+        id: k.id,
+        date: k.date,
+        type: k.type, // 'due' or 'payment'
+        label: k.description || (k.type === "payment" ? "নগদ পরিশোধ" : "বকেয়া যোগ"),
+        debit: k.type === "due" ? k.amount : 0,
+        credit: k.type === "payment" ? k.amount : 0,
+        raw: k
+      }));
+
+    // Combine and sort by date descending
+    return [...supplierPurchases, ...supplierKhata].sort((a, b) => b.date.localeCompare(a.date));
   };
 
   // Filter
@@ -250,8 +330,24 @@ export default function Suppliers() {
                   <tbody>
                     {filteredSuppliers.map((supp) => (
                       <tr key={supp.id}>
-                        <td>
-                          <div className="fw-semibold">{supp.name}</div>
+                        <td 
+                          onClick={() => {
+                            setActiveLedgerSupplier(supp);
+                            setPaymentSuccess("");
+                            setPaymentError("");
+                            const modalEl = document.getElementById("supplierLedgerModal");
+                            if (modalEl) {
+                              const modal = new window.bootstrap.Modal(modalEl);
+                              modal.show();
+                            }
+                          }}
+                          style={{ cursor: "pointer" }}
+                          className="pointer-active"
+                          title="Click to view ledger profile"
+                        >
+                          <div className="fw-semibold text-success d-flex align-items-center gap-1">
+                            {supp.name} <i className="bi bi-info-circle fs-9 text-muted"></i>
+                          </div>
                           {supp.phone && (
                             <small className="text-muted d-block font-monospace" style={{ fontSize: "11px" }}>
                               <i className="bi bi-telephone"></i> {supp.phone}
@@ -282,9 +378,26 @@ export default function Suppliers() {
                               <li>
                                 <button 
                                   className="dropdown-item py-2" 
+                                  onClick={() => {
+                                    setActiveLedgerSupplier(supp);
+                                    setPaymentSuccess("");
+                                    setPaymentError("");
+                                    const modalEl = document.getElementById("supplierLedgerModal");
+                                    if (modalEl) {
+                                      const modal = new window.bootstrap.Modal(modalEl);
+                                      modal.show();
+                                    }
+                                  }}
+                                >
+                                  <i className="bi bi-person-lines-fill me-2 text-success"></i> View Ledger Profile
+                                </button>
+                              </li>
+                              <li>
+                                <button 
+                                  className="dropdown-item py-2" 
                                   onClick={() => navigateTo("/khata", { partyId: supp.id, type: "supplier" })}
                                 >
-                                  <i className="bi bi-book me-2 text-success"></i> Open Ledger (খাতা)
+                                  <i className="bi bi-book me-2 text-secondary"></i> Open Full Khata
                                 </button>
                               </li>
                               <li>
@@ -315,6 +428,146 @@ export default function Suppliers() {
           </div>
         </>
       )}
+
+      {/* Supplier Ledger Profile Modal */}
+      <div 
+        className="modal fade no-print" 
+        id="supplierLedgerModal" 
+        tabIndex="-1" 
+        aria-labelledby="supplierLedgerModalLabel" 
+        aria-hidden="true"
+      >
+        <div className="modal-dialog modal-dialog-centered modal-lg">
+          <div className="modal-content border-0 shadow-lg" style={{ borderRadius: "16px" }}>
+            <div className="modal-header border-bottom border-light bg-light" style={{ borderTopLeftRadius: "16px", borderTopRightRadius: "16px" }}>
+              <h5 className="modal-title font-monospace" id="supplierLedgerModalLabel">Supplier Ledger Profile (মহাজন খতিয়ান)</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body p-4">
+              {activeLedgerSupplier && (() => {
+                const liveSupplier = suppliers.find(s => s.id === activeLedgerSupplier.id) || activeLedgerSupplier;
+                const records = getLedgerRecords(liveSupplier);
+                
+                return (
+                  <div className="row g-3">
+                    {/* Left Column: Info Summary & Record Payment */}
+                    <div className="col-12 col-md-5 border-end border-light pe-md-4">
+                      <div className="mb-4">
+                        <h5 className="fw-bold m-0 text-success">{liveSupplier.name}</h5>
+                        {liveSupplier.phone && <p className="text-muted m-0 fs-8 font-monospace"><i className="bi bi-telephone"></i> {liveSupplier.phone}</p>}
+                        {liveSupplier.address && <p className="text-muted m-0 fs-8"><i className="bi bi-geo-alt"></i> {liveSupplier.address}</p>}
+                      </div>
+
+                      <div className="card-custom bg-danger-subtle border-0 py-2 px-3 text-center mb-4">
+                        <small className="fs-9 text-uppercase text-muted fw-semibold">Current Balance We Owe</small>
+                        <h4 className="m-0 fw-bold text-danger">{formatCurrency(liveSupplier.due || 0)}</h4>
+                      </div>
+
+                      {/* Payment Form */}
+                      <form onSubmit={handleSaveLedgerPayment} className="card-custom bg-light border-0 p-3">
+                        <h6 className="fw-bold mb-3 font-monospace fs-7 text-dark">Record Payment (টাকা পরিশোধ)</h6>
+                        
+                        {paymentSuccess && <div className="alert alert-success py-1.5 fs-8 mb-2">{paymentSuccess}</div>}
+                        {paymentError && <div className="alert alert-danger py-1.5 fs-8 mb-2">{paymentError}</div>}
+
+                        <div className="mb-2">
+                          <label className="form-label fs-9 text-muted font-monospace m-0">Payment Amount (৳) *</label>
+                          <input 
+                            type="number" 
+                            className="form-control form-control-sm font-monospace fw-bold text-success"
+                            placeholder="পরিশোধের পরিমাণ"
+                            required
+                            value={ledgerPaymentAmount}
+                            onChange={(e) => setLedgerPaymentAmount(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="mb-2">
+                          <label className="form-label fs-9 text-muted font-monospace m-0">Payment Date</label>
+                          <input 
+                            type="date" 
+                            className="form-control form-control-sm"
+                            value={ledgerPaymentDate}
+                            onChange={(e) => setLedgerPaymentDate(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="mb-3">
+                          <label className="form-label fs-9 text-muted font-monospace m-0">Remarks / Note</label>
+                          <input 
+                            type="text" 
+                            className="form-control form-control-sm fs-8"
+                            placeholder="যেমন: ক্যাশ পেমেন্ট"
+                            value={ledgerPaymentDesc}
+                            onChange={(e) => setLedgerPaymentDesc(e.target.value)}
+                          />
+                        </div>
+
+                        <button 
+                          type="submit" 
+                          className="btn btn-sm btn-success w-100 font-monospace py-1.5"
+                          disabled={isSavingPayment}
+                        >
+                          {isSavingPayment ? "Saving..." : "Save Payment"}
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Right Column: Ledger Entry History Table */}
+                    <div className="col-12 col-md-7 ps-md-3">
+                      <h6 className="fw-bold mb-3 font-monospace fs-7 text-muted text-uppercase">Transaction History</h6>
+                      
+                      {records.length === 0 ? (
+                        <div className="text-center text-muted fs-8 py-5">এই সাপ্লায়ারের কোনো লেনদেন রেকর্ড পাওয়া যায়নি।</div>
+                      ) : (
+                        <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+                          <table className="table table-sm align-middle fs-8">
+                            <thead>
+                              <tr className="table-light">
+                                <th scope="col" className="font-monospace">Date</th>
+                                <th scope="col" className="font-monospace">Details</th>
+                                <th scope="col" className="text-end font-monospace text-danger">Debit (+)</th>
+                                <th scope="col" className="text-end font-monospace text-success">Credit (-)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {records.map((r, idx) => (
+                                <tr key={r.id || idx}>
+                                  <td className="font-monospace text-muted">{dayjs(r.date).format("DD/MM/YY")}</td>
+                                  <td className="text-wrap" style={{ maxWidth: "150px" }}>
+                                    <div className="fw-semibold text-dark">
+                                      <CopyableTextParser text={r.label} />
+                                    </div>
+                                  </td>
+                                  <td className="text-end text-danger font-monospace">
+                                    {r.debit > 0 ? `+${formatCurrency(r.debit)}` : "-"}
+                                  </td>
+                                  <td className="text-end text-success font-monospace">
+                                    {r.credit > 0 ? `-${formatCurrency(r.credit)}` : "-"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="modal-footer border-top border-light bg-light" style={{ borderBottomLeftRadius: "16px", borderBottomRightRadius: "16px" }}>
+              <button 
+                type="button" 
+                className="btn btn-custom btn-custom-secondary font-monospace py-1.5" 
+                data-bs-dismiss="modal"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

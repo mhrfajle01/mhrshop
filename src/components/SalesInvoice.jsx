@@ -1,6 +1,7 @@
 import React from "react";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import { useData } from "../context/DataContext";
+import CopyableText from "./CopyableText";
 
 export default function SalesInvoice({ sale }) {
   const { settings } = useData();
@@ -28,7 +29,9 @@ export default function SalesInvoice({ sale }) {
       <div className="row g-1 mb-3">
         <div className="col-6">
           <span className="text-muted font-monospace">Invoice No:</span>
-          <div className="fw-bold text-dark font-monospace" style={{ fontSize: "11px" }}>{sale.invoiceNumber}</div>
+          <div className="fw-bold text-dark font-monospace" style={{ fontSize: "11px" }}>
+            <CopyableText text={sale.invoiceNumber} />
+          </div>
         </div>
         <div className="col-6 text-end">
           <span className="text-muted font-monospace">Date:</span>

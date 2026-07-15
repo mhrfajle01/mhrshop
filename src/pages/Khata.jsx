@@ -3,6 +3,7 @@ import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import dayjs from "dayjs";
+import { CopyableTextParser } from "../components/CopyableText";
 
 export default function Khata() {
   const { 
@@ -309,7 +310,9 @@ export default function Khata() {
                     {accountTransactions.map((item) => (
                       <tr key={item.id} className={item.type === "due" ? "table-danger-subtle" : "table-success-subtle"}>
                         <td>
-                          <div className="fw-semibold fs-7 text-wrap">{item.description}</div>
+                          <div className="fw-semibold fs-7 text-wrap">
+                            <CopyableTextParser text={item.description} />
+                          </div>
                           <small className="text-muted font-monospace" style={{ fontSize: "11px" }}>
                             {formatDate(item.date, "DD/MM/YYYY")}
                           </small>
@@ -364,7 +367,9 @@ export default function Khata() {
                 {accountTransactions.map((item) => (
                   <tr key={item.id}>
                     <td>{formatDate(item.date, "DD/MM/YYYY")}</td>
-                    <td>{item.description}</td>
+                    <td>
+                      <CopyableTextParser text={item.description} />
+                    </td>
                     <td className="text-end">{item.type === "payment" ? formatCurrency(item.amount) : "-"}</td>
                     <td className="text-end">{item.type === "due" ? formatCurrency(item.amount) : "-"}</td>
                   </tr>
