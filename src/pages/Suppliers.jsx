@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import dayjs from "dayjs";
 import { CopyableTextParser } from "../components/CopyableText";
@@ -17,6 +18,7 @@ export default function Suppliers() {
     loading 
   } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   // Mode: 'list' or 'form'
   const [mode, setMode] = useState("list");
@@ -95,13 +97,14 @@ export default function Suppliers() {
   };
 
   const handleDelete = async (id, name) => {
-    if (window.confirm(`আপনি কি সত্যিই "${name}" সাপ্লায়ার মুছে ফেলতে চান?`)) {
+    const ok = await showConfirm(`আপনি কি সত্যিই "${name}" সাপ্লায়ার মুছে ফেলতে চান?`, "সাপ্লায়ার ডিলিট", true);
+    if (ok) {
       try {
         await deleteSupplierItem(id, name);
         setSuccess("সাপ্লায়ার প্রোফাইল মুছে ফেলা হয়েছে।");
         setTimeout(() => setSuccess(""), 3000);
       } catch (err) {
-        alert("সাপ্লায়ার মুছতে ব্যর্থ হয়েছে।");
+        await showAlert("সাপ্লায়ার মুছতে ব্যর্থ হয়েছে।", "সমস্যা");
       }
     }
   };

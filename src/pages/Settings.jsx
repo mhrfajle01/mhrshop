@@ -19,6 +19,8 @@ export default function Settings() {
     customers = [],
     suppliers = [],
     khata = [],
+    teaOrders = [],
+    teaExpenses = [],
     addNewCustomer,
     addNewSupplier,
     addNewKhataEntry,
@@ -57,6 +59,9 @@ export default function Settings() {
   // Factory Reset Form state
   const [resetChecked, setResetChecked] = useState(false);
   const [resetVerification, setResetVerification] = useState("");
+  const [resetMode, setResetMode] = useState("range"); // 'range' | 'full'
+  const [resetStartDate, setResetStartDate] = useState(dayjs().subtract(7, "day").format("YYYY-MM-DD"));
+  const [resetEndDate, setResetEndDate] = useState(dayjs().format("YYYY-MM-DD"));
 
   // Custom Modal State: null | { type: 'alert'|'confirm'|'danger'|'success'|'info', title, message, onConfirm, onCancel }
   const [modalConfig, setModalConfig] = useState(null);
@@ -270,24 +275,56 @@ export default function Settings() {
       return;
     }
 
+    if (resetMode === "full") {
+      setModalConfig({
+        type: "danger",
+        title: "⚠️ সম্পূর্ণ ফ্যাক্টরি রিসেট",
+        message: "আপনি কি নিশ্চিতভাবে আপনার দোকানের সমস্ত ডাটাবেজ চিরতরে মুছে দিতে চান? এটি আর ফিরিয়ে আনা যাবে না!",
+        onConfirm: async () => {
+          try {
+            await triggerFactoryReset();
+            setModalConfig({
+              type: "success",
+              title: "ফ্যাক্টরি রিসেট সফল",
+              message: "দোকানের সকল হিসেব রিসেট করা হয়েছে। রিলোড করা হচ্ছে...",
+              onConfirm: () => window.location.reload()
+            });
+          } catch (err) {
+            setModalConfig({
+              type: "danger",
+              title: "রিসেট ব্যর্থ",
+              message: "ডাটা মুছতে কারিগরি জটিলতা হয়েছে: " + err.message
+            });
+          }
+        }
+      });
+      return;
+    }
+
+    // Date Range Reset with 24h Recycle Bin Recovery
     setModalConfig({
       type: "danger",
-      title: "⚠️ চূড়ান্ত ফ্যাক্টরি রিসেট (ডাটা ডিলেট)",
-      message: "আপনি কি নিশ্চিতভাবে আপনার দোকানের সমস্ত ডিজিটাল ডাটা চিরতরে মুছে দিতে চান? এটি করলে আপনার পণ্যতালিকা, কাস্টমার লেজার ডায়েরি এবং সমস্ত হিসাব চিরদিনের জন্য মুছে যাবে এবং এটি আর ফিরে পাওয়া যাবে না!",
+      title: "⚠️ নির্দিষ্ট তারিখের ডাটা রিসেট",
+      message: `${resetStartDate} হতে ${resetEndDate} তারিখের সমস্ত বিক্রয়, ক্রয়, খরচ, খাতা ও চা স্টলের ডাটা মুছে রিসাইকেল বিনে পাঠানো হবে। আপনি পরবর্তী ২৪ ঘণ্টার মধ্যে ট্র্যাশ থেকে এগুলো এক ক্লিকে পুনরুদ্ধার করতে পারবেন। নিশ্চিত করতে চান?`,
       onConfirm: async () => {
         try {
-          await triggerFactoryReset();
+          const res = await triggerFactoryReset({
+            startDate: resetStartDate,
+            endDate: resetEndDate,
+            keepInTrash24h: true
+          });
+          setResetChecked(false);
+          setResetVerification("");
           setModalConfig({
             type: "success",
-            title: "ফ্যাক্টরি রিসেট সফল",
-            message: "আপনার দোকানের সকল হিসেব ও ফাইল রিসেট করা হয়েছে। সফ্টওয়্যারটি রি-ইনিশিয়ালাইজ করা হচ্ছে।",
-            onConfirm: () => window.location.reload()
+            title: "ডাটা সফলভাবে সরানো হয়েছে",
+            message: `${resetStartDate} হতে ${resetEndDate} তারিখের মোট ${res.totalMoved || 0} টি এন্ট্রি রিসাইকেল বিনে স্থানান্তর করা হয়েছে। আগামী ২৪ ঘণ্টার মধ্যে যে কোনো সময় ট্র্যাশ সেকশন থেকে পুনরুদ্ধার করা যাবে।`
           });
         } catch (err) {
           setModalConfig({
             type: "danger",
             title: "রিসেট ব্যর্থ",
-            message: "ডাটা মুছতে কারিগরি জটিলতা হয়েছে: " + err.message
+            message: "ডাটা মুছতে সমস্যা হয়েছে: " + err.message
           });
         }
       }
@@ -304,6 +341,10 @@ export default function Settings() {
   const todaySalesCash = todaySalesDocs.reduce((acc, s) => acc + (s.paidAmount || 0), 0);
   const todaySalesDues = todaySalesDocs.reduce((acc, s) => acc + (s.dueAmount || 0), 0);
 
+  const todayTeaDocs = teaOrders.filter(t => !t.deleted && (t.date || t.createdAt?.slice(0, 10)) === todayStr);
+  const todayTeaCash = todayTeaDocs.reduce((acc, t) => acc + (t.paid || 0), 0);
+  const todayTeaDues = todayTeaDocs.reduce((acc, t) => acc + (t.due || 0), 0);
+
   const todayPurchasesDocs = purchases.filter(p => !p.deleted && p.date === todayStr);
   const todayPurchasesCash = todayPurchasesDocs.reduce((acc, p) => acc + (p.paidAmount || 0), 0);
   const todayPurchasesDues = todayPurchasesDocs.reduce((acc, p) => acc + (p.dueAmount || 0), 0);
@@ -311,26 +352,36 @@ export default function Settings() {
   const todayExpensesDocs = expenses.filter(e => !e.deleted && e.date === todayStr);
   const todayExpensesTotal = todayExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
 
+  const todayTeaExpensesDocs = teaExpenses.filter(e => !e.deleted && (e.date || e.createdAt?.slice(0, 10)) === todayStr);
+  const todayTeaExpensesTotal = todayTeaExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
+
   const todayKhataCustomerPayments = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "customer" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
   const todayKhataCustomerDues = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "customer" && k.type === "due" && !(k.description || "").includes("বিক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
   const todayKhataSupplierPayments = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "supplier" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
   const todayKhataSupplierDues = khata.filter(k => !k.deleted && k.date === todayStr && k.partyType === "supplier" && k.type === "due" && !(k.description || "").includes("ক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
 
-  const todayCashReceived = todaySalesCash + todayKhataCustomerPayments;
-  const todayCashPaid = todayPurchasesCash + todayKhataSupplierPayments + todayExpensesTotal;
+  const todayCashReceived = todaySalesCash + todayTeaCash + todayKhataCustomerPayments;
+  const todayCashPaid = todayPurchasesCash + todayKhataSupplierPayments + todayExpensesTotal + todayTeaExpensesTotal;
   const todayNetCashHand = todayCashReceived - todayCashPaid;
 
   const openingFloat = Number(localStorage.getItem("cash_opening_float") || 0);
   const expectedDrawerCash = openingFloat + todayNetCashHand;
 
-  const netCustomerDueChange = (todaySalesDues + todayKhataCustomerDues) - todayKhataCustomerPayments;
+  const netCustomerDueChange = (todaySalesDues + todayTeaDues + todayKhataCustomerDues) - todayKhataCustomerPayments;
   const netSupplierDueChange = (todayPurchasesDues + todayKhataSupplierDues) - todayKhataSupplierPayments;
 
   // Monthly stats
   const monthSalesDocs = sales.filter(s => !s.deleted && s.date.startsWith(thisMonthStr));
-  const monthSalesTotal = monthSalesDocs.reduce((acc, s) => acc + (s.payableAmount || 0), 0);
+  const monthMudiSalesTotal = monthSalesDocs.reduce((acc, s) => acc + (s.payableAmount || 0), 0);
+  const monthTeaDocs = teaOrders.filter(t => !t.deleted && (t.date || t.createdAt?.slice(0, 10) || "").startsWith(thisMonthStr));
+  const monthTeaSalesTotal = monthTeaDocs.reduce((acc, t) => acc + (t.total || 0), 0);
+  const monthSalesTotal = monthMudiSalesTotal + monthTeaSalesTotal;
+
   const monthExpensesDocs = expenses.filter(e => !e.deleted && e.date.startsWith(thisMonthStr));
-  const monthExpensesTotal = monthExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
+  const monthMudiExpensesTotal = monthExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
+  const monthTeaExpensesDocs = teaExpenses.filter(e => !e.deleted && (e.date || e.createdAt?.slice(0, 10) || "").startsWith(thisMonthStr));
+  const monthTeaExpensesTotal = monthTeaExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
+  const monthExpensesTotal = monthMudiExpensesTotal + monthTeaExpensesTotal;
 
   // Month Profit Estimate
   let monthGrossProfit = 0;
@@ -343,28 +394,32 @@ export default function Settings() {
       });
     }
   });
+  monthGrossProfit += monthTeaSalesTotal;
   const monthNetProfit = monthGrossProfit - monthExpensesTotal;
 
   // Copy blueprint functionality
   const handleCopyDailyBlueprint = () => {
-    const text = `তারিখ: ${formatDate(todayStr, "DD MMMM YYYY")}
+    const text = `তারিখ: ${formatDate(todayStr, "DD MMMM YYYY")} (দোকান ও চা স্টল সমন্বিত খাতা)
 --------------------------------------------
 ১. ক্যাশ ড্রয়ার বিবরণী (Cash Drawer Statement)
 --------------------------------------------
 (+) প্রারম্ভিক ক্যাশ ফ্লোট (Opening Cash): ${formatCurrency(openingFloat)}
-(+) নগদ ও ক্যাশ বিক্রয় (Cash Sales): ${formatCurrency(todaySalesCash)}
+(+) মুদি নগদ বিক্রয় (Mudi Cash): ${formatCurrency(todaySalesCash)}
+(+) চা স্টল নগদ বিক্রয় (Tea Cash): ${formatCurrency(todayTeaCash)}
 (+) কাস্টমার থেকে বকেয়া আদায় (Payment In): ${formatCurrency(todayKhataCustomerPayments)}
 (-) পাইকারি নগদ ক্রয় (Wholesale Paid): ${formatCurrency(todayPurchasesCash)}
 (-) সাপ্লায়ারকে বকেয়া পরিশোধ (Payment Out): ${formatCurrency(todayKhataSupplierPayments)}
-(-) দোকান পরিচালন খরচ (Operating Expenses): ${formatCurrency(todayExpensesTotal)}
+(-) মুদি দোকান খরচ (Operating Expenses): ${formatCurrency(todayExpensesTotal)}
+(-) চা স্টল খরচ (দুধ/চিনি/গ্যাস): ${formatCurrency(todayTeaExpensesTotal)}
 --------------------------------------------
 (=) নিট ক্যাশ ফ্লো (Net Cash Flow): ${formatCurrency(todayNetCashHand)}
-(=) বাক্সে নগদ থাকা উচিত (Closing Cash): ${formatCurrency(expectedDrawerCash)}
+(=) বাক্সে মোট নগদ থাকা উচিত (Closing Cash): ${formatCurrency(expectedDrawerCash)}
 
 --------------------------------------------
 ২. কাস্টমার বকেয়া বিবরণী (Customer Credit Ledger)
 --------------------------------------------
-(+) আজকের নতুন বাকি বিক্রয় (Invoice Credit): ${formatCurrency(todaySalesDues)}
+(+) মুদি নতুন বাকি বিক্রয় (Mudi Credit): ${formatCurrency(todaySalesDues)}
+(+) চা স্টল নতুন বাকি (Tea Credit): ${formatCurrency(todayTeaDues)}
 (+) ম্যানুয়াল বাকি খাতা এন্ট্রি (Khata Dues): ${formatCurrency(todayKhataCustomerDues)}
 (-) কাস্টমার থেকে বকেয়া আদায় (Dues Collected): ${formatCurrency(todayKhataCustomerPayments)}
 --------------------------------------------
@@ -927,21 +982,29 @@ export default function Settings() {
             </h4>
             
             <div className="p-3 bg-light rounded border fs-7 text-dark" style={{ fontFamily: "Outfit, sans-serif" }}>
-              <div className="fw-bold mb-2 pb-1 border-bottom"><i className="bi bi-bookmark-star-fill text-info"></i> মাসিক খাতা ক্লোজিং বিবরণী: {monthNameBangla}</div>
+              <div className="fw-bold mb-2 pb-1 border-bottom"><i className="bi bi-bookmark-star-fill text-info"></i> মাসিক খাতা ক্লোজিং বিবরণী: {monthNameBangla} (মুদি + চা স্টল)</div>
               <div className="d-flex justify-content-between py-1">
-                <span>১. মোট বিক্রয় পরিমাণ (নগদ + বকেয়া):</span>
+                <span>১. মোট বিক্রয় পরিমাণ (মুদি + চা):</span>
                 <span className="fw-bold font-monospace">{formatCurrency(monthSalesTotal)}</span>
               </div>
+              <div className="d-flex justify-content-between py-1 fs-8 text-muted ps-2">
+                <span>↳ মুদি বিক্রয়:</span>
+                <span className="font-monospace">{formatCurrency(monthMudiSalesTotal)}</span>
+              </div>
+              <div className="d-flex justify-content-between py-1 fs-8 text-muted ps-2">
+                <span>↳ চা স্টল বিক্রয়:</span>
+                <span className="font-monospace">{formatCurrency(monthTeaSalesTotal)}</span>
+              </div>
               <div className="d-flex justify-content-between py-1">
-                <span>২. মোট অন্যান্য দোকান খরচ (Expenses):</span>
+                <span>২. মোট দোকান ও চা খরচ (Expenses):</span>
                 <span className="fw-bold font-monospace text-danger">{formatCurrency(monthExpensesTotal)}</span>
               </div>
               <div className="d-flex justify-content-between py-1 border-bottom pb-2">
-                <span>৩. আনুমানিক নিট মুনাফা (Net Profit):</span>
+                <span>৩. আনুমানিক মোট নিট মুনাফা (Net Profit):</span>
                 <span className={`fw-bold font-monospace ${monthNetProfit >= 0 ? "text-success" : "text-danger"}`}>{formatCurrency(monthNetProfit)}</span>
               </div>
               <div className="fs-9 text-muted mt-2 italic text-center">
-                *উক্ত মাসে বিক্রয়ের বিপরীতে আপনার আনুমানিক নিট মুনাফা বা প্রফিটের হার হচ্ছে <strong>{monthSalesTotal > 0 ? ((monthNetProfit / monthSalesTotal) * 100).toFixed(1) : 0}%</strong>।
+                *উক্ত মাসে সমন্বিত বিক্রয়ের বিপরীতে আপনার আনুমানিক নিট মুনাফা বা প্রফিটের হার হচ্ছে <strong>{monthSalesTotal > 0 ? ((monthNetProfit / monthSalesTotal) * 100).toFixed(1) : 0}%</strong>।
               </div>
             </div>
           </div>
@@ -986,6 +1049,35 @@ export default function Settings() {
                 <div id="flush-collapseThree" className="accordion-collapse collapse" data-bs-parent="#manualGuideAccordion">
                   <div className="accordion-body px-0 fs-7 text-secondary" style={{ lineHeight: "1.6" }}>
                     মাস শেষে লাভ বের করার জন্য: **বিক্রয়কৃত পণ্যের মোট বিক্রয়মূল্য - পণ্যগুলোর ক্রয়মূল্য = মোট লাভ (Gross Profit)**। এরপর এই মোট লাভ থেকে দোকানের ভাড়া, কর্মচারীর বেতন, বিদ্যুৎ বিল এবং অন্যান্য আনুষঙ্গিক পরিচালন খরচ বিয়োগ করলে আপনি **আসল নিট লাভ (Net Profit)** পাবেন।
+                  </div>
+                </div>
+              </div>
+
+              <div className="accordion-item">
+                <h5 className="accordion-header" id="flush-headingFour">
+                  <button className="accordion-button collapsed fs-8 fw-bold py-2 px-0 text-dark" type="button" data-bs-toggle="collapse" data-bs-target="#flush-collapseFour">
+                    🍵 ৪. মুদি দোকান ও চা স্টল সমন্বিত ক্যাশ ড্রয়ার ও হিসাব গাইড (Single Shop Integration)
+                  </button>
+                </h5>
+                <div id="flush-collapseFour" className="accordion-collapse collapse" data-bs-parent="#manualGuideAccordion">
+                  <div className="accordion-body px-0 fs-7 text-secondary" style={{ lineHeight: "1.6" }}>
+                    <div className="p-2.5 bg-light rounded border mb-2">
+                      <strong className="text-dark d-block mb-1">ক. এক ক্যাশ ড্রয়ার নীতি (Single Cash Drawer):</strong>
+                      মুদি এবং চা স্টলের ক্যাশ টাকা দিনশেষে একই ক্যাশবাক্সে জমা হয়। দিনশেষে ক্যাশ মেলানোর সময়:
+                      <div className="font-monospace text-success fw-bold mt-1" style={{ fontSize: "11px" }}>
+                        মোট নগদ হিসাব = মুদি ক্যাশ বিক্রয় + চা স্টল নগদ বিক্রয় + কাস্টমার বকেয়া আদায় - (সাপ্লায়ার পেমেন্ট + দোকান খরচ + দুধ/চিনি খরচ)
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-light rounded border mb-2">
+                      <strong className="text-dark d-block mb-1">খ. চা স্টলের চিনি, গুঁড়ো দুধ ও সিগারেট সমন্বয়:</strong>
+                      মুদি দোকান থেকে যখন চা স্টলের জন্য চিনি বা প্যাকেট দুধ নেওয়া হয়, তা সরাসরি খরচ বা অভ্যন্তরীণ ট্রান্সফার হিসেবে হিসাব রাখতে পারেন যাতে ডাবল কাউন্টিং না হয়। আর বাইরের থেকে সরাসরি দুধ/গ্যাস সিলিন্ডার কিনলে চা স্টলের খরচ তালিকায় লিখবেন।
+                    </div>
+
+                    <div className="p-2.5 bg-light rounded border">
+                      <strong className="text-dark d-block mb-1">গ. একক কাস্টমার বাকি খাতা (Unified Customer Due):</strong>
+                      একই কাস্টমার চা স্টলে বাকিতে চা-সিগারেট খেলে চা POS চেকআউটে "Customer" হিসেবে সিলেক্ট করে বাকি দিলে তা একই লেজারে যুক্ত থাকে। আলাদা ডাবল খাতা মেইনটেইন করার প্রয়োজন নেই।
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1047,6 +1139,60 @@ export default function Settings() {
             </p>
 
             <form onSubmit={handleFactoryResetSubmit}>
+              {/* Reset Type Selector */}
+              <div className="mb-3">
+                <label className="form-label text-dark fs-8 fw-bold">রিসেটের ধরণ নির্বাচন করুন:</label>
+                <div className="btn-group w-100" role="group">
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${resetMode === "range" ? "btn-danger fw-bold" : "btn-outline-danger"}`}
+                    onClick={() => setResetMode("range")}
+                  >
+                    📅 নির্দিষ্ট তারিখের ডাটা (নিরাপদ)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${resetMode === "full" ? "btn-danger fw-bold" : "btn-outline-danger"}`}
+                    onClick={() => setResetMode("full")}
+                  >
+                    💣 সম্পূর্ণ ডাটাবেজ ক্লিয়ার
+                  </button>
+                </div>
+              </div>
+
+              {resetMode === "range" && (
+                <div className="p-2.5 bg-white rounded border border-danger-subtle mb-3">
+                  <div className="text-dark fs-8 fw-bold mb-2">
+                    <i className="bi bi-calendar-range text-danger me-1"></i> কোন তারিখ থেকে কোন তারিখের ডাটা মুছবেন?
+                  </div>
+                  <div className="row g-2">
+                    <div className="col-6">
+                      <label className="form-label text-muted fs-9 mb-1">হতে (Start Date):</label>
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={resetStartDate}
+                        onChange={(e) => setResetStartDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="col-6">
+                      <label className="form-label text-muted fs-9 mb-1">পর্যন্ত (End Date):</label>
+                      <input
+                        type="date"
+                        className="form-control form-control-sm"
+                        value={resetEndDate}
+                        onChange={(e) => setResetEndDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <small className="d-block text-success fw-bold mt-2 fs-9">
+                    <i className="bi bi-shield-check"></i> ২৪ ঘণ্টার রিকভারি সুরক্ষা: মুছে ফেলা সমস্ত ডাটা ট্র্যাশ / রিসাইকেল বিনে জমা থাকবে এবং ২৪ ঘণ্টার মধ্যে রিস্টোর করা যাবে।
+                  </small>
+                </div>
+              )}
+
               <div className="form-check mb-3">
                 <input 
                   className="form-check-input" 
@@ -1056,7 +1202,10 @@ export default function Settings() {
                   onChange={(e) => setResetChecked(e.target.checked)}
                 />
                 <label className="form-check-label fs-8 text-dark fw-bold" htmlFor="resetConfirmCheck">
-                  আমি নিশ্চিত যে আমি আমার দোকানের সমস্ত ডাটাবেজ মুছে দিতে চাই।
+                  {resetMode === "range" 
+                    ? `আমি নিশ্চিত যে আমি ${resetStartDate} হতে ${resetEndDate} তারিখের হিসাব মুছে ফেলতে চাই।`
+                    : "আমি নিশ্চিত যে আমি আমার পুরো দোকানের সমস্ত ডাটাবেজ মুছে দিতে চাই।"
+                  }
                 </label>
               </div>
 
@@ -1080,7 +1229,7 @@ export default function Settings() {
                 disabled={loading || !resetChecked || resetVerification.trim() !== "RESET MY SHOP"}
                 style={{ background: "#dc3545" }}
               >
-                <i className="bi bi-exclamation-triangle-fill"></i> Confirm Factory Reset (সব মুছে ফেলুন)
+                <i className="bi bi-exclamation-triangle-fill"></i> {resetMode === "range" ? "রিসেট করুন ও ট্র্যাশে পাঠান" : "Confirm Factory Reset (সব মুছে ফেলুন)"}
               </button>
             </form>
           </div>

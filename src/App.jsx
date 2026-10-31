@@ -2,6 +2,7 @@ import React from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { RouterProvider, useRouter } from "./context/RouterContext";
 import { DataProvider } from "./context/DataContext";
+import { ModalProvider } from "./context/ModalContext";
 
 // Import Layout Components
 import Navbar from "./components/Navbar";
@@ -25,6 +26,7 @@ import Khata from "./pages/Khata";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Trash from "./pages/Trash";
+import TeaStall from "./tea/TeaStall";
 
 function AppContent() {
   const { currentView } = useRouter();
@@ -65,6 +67,8 @@ function AppContent() {
         return <Reports />;
       case "settings":
         return <Settings />;
+      case "tea-stall":
+        return <TeaStall />;
       case "trash":
         return <Trash />;
       default:
@@ -90,7 +94,9 @@ export default function App() {
     <AuthProvider>
       <RouterProvider>
         <DataProvider>
-          <AppContent />
+          <ModalProvider>
+            <AppContent />
+          </ModalProvider>
         </DataProvider>
       </RouterProvider>
     </AuthProvider>

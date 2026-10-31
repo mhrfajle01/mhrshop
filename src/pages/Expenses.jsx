@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
+import { useModal } from "../context/ModalContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import dayjs from "dayjs";
 
 export default function Expenses() {
   const { expenses, addNewExpense, updateExpenseItem, deleteExpenseItem, loading } = useData();
+  const { showAlert, showConfirm } = useModal();
 
   // Navigation page state: 'list' or 'form'
   const [showForm, setShowForm] = useState(false);
@@ -74,13 +76,14 @@ export default function Expenses() {
   };
 
   const handleDelete = async (id, amt) => {
-    if (window.confirm(`আপনি কি সত্যিই ৳${amt} পরিমাণের এই খরচটি মুছে ফেলতে চান?`)) {
+    const ok = await showConfirm(`আপনি কি সত্যিই ৳${amt} পরিমাণের এই খরচটি মুছে ফেলতে চান?`, "খরচ ডিলিট", true);
+    if (ok) {
       try {
         await deleteExpenseItem(id, amt);
         setSuccess("খরচ ডিলিট করা হয়েছে।");
         setTimeout(() => setSuccess(""), 3000);
       } catch (err) {
-        alert("ডিলিট করতে ব্যর্থ হয়েছে।");
+        await showAlert("ডিলিট করতে ব্যর্থ হয়েছে।", "সমস্যা");
       }
     }
   };

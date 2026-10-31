@@ -87,7 +87,16 @@ export default function PurchasesNew() {
   };
 
   const updateCartQty = (productId, qty) => {
-    const newQty = Math.max(1, Number(qty));
+    if (qty === "" || isNaN(qty)) {
+      setCart(cart.map(i => i.productId === productId ? { ...i, quantity: "" } : i));
+      return;
+    }
+    const parsedQty = parseFloat(qty);
+    if (parsedQty <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+    const newQty = Number(parsedQty.toFixed(4));
     setCart(cart.map(i => 
       i.productId === productId ? { ...i, quantity: newQty } : i
     ));
@@ -286,23 +295,40 @@ export default function PurchasesNew() {
                     
                     <div className="d-flex align-items-center justify-content-center" style={{ width: "25%" }}>
                       <button 
+                        type="button"
                         className="btn btn-sm btn-light border p-1"
                         style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        onClick={() => updateCartQty(item.productId, item.quantity - 1)}
+                        onClick={() => {
+                          const curr = Number(item.quantity) || 0;
+                          const step = curr <= 1 && curr > 0.1 ? 0.25 : 1;
+                          updateCartQty(item.productId, Math.max(0, Number((curr - step).toFixed(4))));
+                        }}
                       >
                         -
                       </button>
                       <input 
                         type="number" 
+                        step="any"
+                        min="0"
                         className="pos-input mx-1 fs-7 text-center font-monospace"
-                        style={{ width: "35px" }}
+                        style={{ width: "42px" }}
                         value={item.quantity}
                         onChange={(e) => updateCartQty(item.productId, e.target.value)}
+                        onBlur={(e) => {
+                          if (!e.target.value || Number(e.target.value) <= 0) {
+                            updateCartQty(item.productId, 1);
+                          }
+                        }}
                       />
                       <button 
+                        type="button"
                         className="btn btn-sm btn-light border p-1"
                         style={{ width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        onClick={() => updateCartQty(item.productId, item.quantity + 1)}
+                        onClick={() => {
+                          const curr = Number(item.quantity) || 0;
+                          const step = curr < 1 ? 0.25 : 1;
+                          updateCartQty(item.productId, Number((curr + step).toFixed(4)));
+                        }}
                       >
                         +
                       </button>

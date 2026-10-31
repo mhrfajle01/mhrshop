@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
 import { useAuth } from "./AuthContext";
 import * as dbApi from "../firebase/db";
+import * as teaApi from "../tea/context/teaDb";
 
 const DataContext = createContext();
 
@@ -21,6 +22,8 @@ export function DataProvider({ children }) {
   const [khata, setKhata] = useState([]);
   const [activities, setActivities] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [teaOrders, setTeaOrders] = useState([]);
+  const [teaExpenses, setTeaExpenses] = useState([]);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +47,9 @@ export function DataProvider({ children }) {
         sals, 
         purchs, 
         khats, 
-        shopSettings
+        shopSettings,
+        teaOrds,
+        teaExps
       ] = await Promise.all([
         dbApi.getCategories(uid, isLocal),
         dbApi.getProducts(uid, isLocal),
@@ -54,7 +59,9 @@ export function DataProvider({ children }) {
         dbApi.getSales(uid, isLocal),
         dbApi.getPurchases(uid, isLocal),
         dbApi.getKhata(uid, isLocal),
-        dbApi.getShopSettings(uid, isLocal)
+        dbApi.getShopSettings(uid, isLocal),
+        teaApi.getTeaOrders(uid, isLocal),
+        teaApi.getTeaExpenses(uid, isLocal)
       ]);
       
       // Load recent activities
@@ -70,6 +77,8 @@ export function DataProvider({ children }) {
       setKhata(khats);
       setSettings(shopSettings);
       setActivities(acts);
+      setTeaOrders(teaOrds || []);
+      setTeaExpenses(teaExps || []);
     } catch (err) {
       console.error("Error loading data:", err);
       setError("ডাটা লোড করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।");
@@ -93,6 +102,8 @@ export function DataProvider({ children }) {
       setKhata([]);
       setActivities([]);
       setSettings(null);
+      setTeaOrders([]);
+      setTeaExpenses([]);
     }
   }, [currentUser, isLocalMode]);
 
@@ -426,10 +437,10 @@ export function DataProvider({ children }) {
     await fetchAllData();
   };
 
-  const triggerFactoryReset = async () => {
+  const triggerFactoryReset = async (options = {}) => {
     setLoading(true);
     try {
-      const res = await dbApi.factoryResetUserData(currentUser.uid, isLocalMode);
+      const res = await dbApi.factoryResetUserData(currentUser.uid, isLocalMode, options);
       await fetchAllData();
       return res;
     } catch (e) {
@@ -509,6 +520,8 @@ export function DataProvider({ children }) {
     trash,
     activities,
     settings,
+    teaOrders,
+    teaExpenses,
     loading,
     error,
     refreshData: fetchAllData,

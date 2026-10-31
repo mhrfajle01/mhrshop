@@ -1,35 +1,39 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
+import TeaTrashSection from "../tea/components/TeaTrashSection";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import CopyableText from "../components/CopyableText";
 
 export default function Trash() {
   const { trash, trashRestoreItem, trashPermanentDeleteItem, loading } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   // Tab state: 'catalog' | 'people' | 'transactions' | 'ledger'
   const [activeTab, setActiveTab] = useState("catalog");
 
   const handleRestore = async (collectionName, id, label) => {
-    if (window.confirm(`আপনি কি "${label}" পুনরুদ্ধার (Restore) করতে চান?`)) {
+    const ok = await showConfirm(`আপনি কি "${label}" পুনরুদ্ধার (Restore) করতে চান?`, "পুনরুদ্ধার নিশ্চিতকরণ");
+    if (ok) {
       try {
         await trashRestoreItem(collectionName, id, label);
-        alert("আইটেমটি পুনরুদ্ধার করা হয়েছে।");
+        await showAlert("আইটেমটি পুনরুদ্ধার করা হয়েছে।", "সফল");
       } catch (e) {
-        alert("পুনরুদ্ধার করতে ব্যর্থ হয়েছে।");
+        await showAlert("পুনরুদ্ধার করতে ব্যর্থ হয়েছে।", "সমস্যা");
       }
     }
   };
 
   const handlePermanentDelete = async (collectionName, id, label) => {
-    const doubleConfirm = window.confirm(`স্থায়ীভাবে মুছে ফেললে "${label}" আর কখনো ফিরে পাওয়া যাবে না। বিক্রয় রসিদ হলে স্টক রিভার্স করা হবে। আপনি কি নিশ্চিত?`);
+    const doubleConfirm = await showConfirm(`স্থায়ীভাবে মুছে ফেললে "${label}" আর কখনো ফিরে পাওয়া যাবে না। বিক্রয় রসিদ হলে স্টক রিভার্স করা হবে। আপনি কি নিশ্চিত?`, "স্থায়ীভাবে ডিলিট", true);
     if (doubleConfirm) {
       try {
         await trashPermanentDeleteItem(collectionName, id, label);
-        alert("আইটেমটি স্থায়ীভাবে ডিলিট করা হয়েছে।");
+        await showAlert("আইটেমটি স্থায়ীভাবে ডিলিট করা হয়েছে।", "সফল");
       } catch (e) {
-        alert("ডিলিট করতে ব্যর্থ হয়েছে।");
+        await showAlert("ডিলিট করতে ব্যর্থ হয়েছে।", "সমস্যা");
       }
     }
   };
@@ -284,6 +288,9 @@ export default function Trash() {
           )}
         </div>
       )}
+
+      {/* Tea Stall Cancelled Tokens Trash Section */}
+      <TeaTrashSection />
     </div>
   );
 }

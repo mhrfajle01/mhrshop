@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import CopyableText from "../components/CopyableText";
 
 export default function Purchases() {
   const { purchases, deletePurchaseItem, loading } = useData();
   const { navigateTo } = useRouter();
+  const { showConfirm } = useModal();
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -118,8 +120,9 @@ export default function Purchases() {
                         </button>
                         <button 
                           className="btn btn-sm btn-outline-danger p-1"
-                          onClick={() => {
-                            if (window.confirm(`আপনি কি ক্রয় রসিদ "${pur.invoiceNumber}" মুছে ফেলতে চান?`)) {
+                          onClick={async () => {
+                            const ok = await showConfirm(`আপনি কি ক্রয় রসিদ "${pur.invoiceNumber}" মুছে ফেলতে চান?`, "ক্রয় রসিদ ডিলিট", true);
+                            if (ok) {
                               deletePurchaseItem(pur.id);
                             }
                           }}

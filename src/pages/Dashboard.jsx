@@ -6,6 +6,7 @@ import dayjs from "dayjs";
 import Chart from "chart.js/auto";
 import SalesInvoice from "../components/SalesInvoice";
 import CopyableText from "../components/CopyableText";
+import CombinedShopBanner from "../tea/components/CombinedShopBanner";
 
 export default function Dashboard() {
   const { 
@@ -17,6 +18,8 @@ export default function Dashboard() {
     purchases, 
     khata, 
     activities, 
+    teaOrders = [],
+    teaExpenses = [],
     loading 
   } = useData();
   const { navigateTo } = useRouter();
@@ -36,6 +39,7 @@ export default function Dashboard() {
   const [selectedSale, setSelectedSale] = useState(null);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   const [dashboardPeriod, setDashboardPeriod] = useState("today");
+  const [shopViewFilter, setShopViewFilter] = useState("all"); // 'all' | 'mudi' | 'tea'
   const [openingFloat, setOpeningFloat] = useState(() => Number(localStorage.getItem("cash_opening_float") || 0));
   const [toastConfig, setToastConfig] = useState({ show: false, message: "" });
 
@@ -48,6 +52,10 @@ export default function Dashboard() {
     const todaySalesCash = todaySalesDocs.reduce((acc, s) => acc + (s.paidAmount || 0), 0);
     const todaySalesDues = todaySalesDocs.reduce((acc, s) => acc + (s.dueAmount || 0), 0);
 
+    const todayTeaDocs = teaOrders.filter(t => !t.deleted && (t.date || t.createdAt?.slice(0, 10)) === todayStrVal);
+    const todayTeaCash = todayTeaDocs.reduce((acc, t) => acc + (t.paid || 0), 0);
+    const todayTeaDues = todayTeaDocs.reduce((acc, t) => acc + (t.due || 0), 0);
+
     const todayPurchasesDocs = purchases.filter(p => !p.deleted && p.date === todayStrVal);
     const todayPurchasesCash = todayPurchasesDocs.reduce((acc, p) => acc + (p.paidAmount || 0), 0);
     const todayPurchasesDues = todayPurchasesDocs.reduce((acc, p) => acc + (p.dueAmount || 0), 0);
@@ -55,39 +63,45 @@ export default function Dashboard() {
     const todayExpensesDocs = expenses.filter(e => !e.deleted && e.date === todayStrVal);
     const todayExpensesTotal = todayExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
 
+    const todayTeaExpensesDocs = teaExpenses.filter(e => !e.deleted && (e.date || e.createdAt?.slice(0, 10)) === todayStrVal);
+    const todayTeaExpensesTotal = todayTeaExpensesDocs.reduce((acc, e) => acc + (e.amount || 0), 0);
+
     const todayKhataCustomerPayments = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "customer" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
     const todayKhataCustomerDues = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "customer" && k.type === "due" && !(k.description || "").includes("বিক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
     const todayKhataSupplierPayments = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "supplier" && k.type === "payment").reduce((acc, k) => acc + (k.amount || 0), 0);
     const todayKhataSupplierDues = khata.filter(k => !k.deleted && k.date === todayStrVal && k.partyType === "supplier" && k.type === "due" && !(k.description || "").includes("ক্রয় রসিদ")).reduce((acc, k) => acc + (k.amount || 0), 0);
 
-    const todayCashReceived = todaySalesCash + todayKhataCustomerPayments;
-    const todayCashPaid = todayPurchasesCash + todayKhataSupplierPayments + todayExpensesTotal;
+    const todayCashReceived = todaySalesCash + todayTeaCash + todayKhataCustomerPayments;
+    const todayCashPaid = todayPurchasesCash + todayKhataSupplierPayments + todayExpensesTotal + todayTeaExpensesTotal;
     const todayNetCashHand = todayCashReceived - todayCashPaid;
 
     const openingFloatVal = Number(localStorage.getItem("cash_opening_float") || 0);
     const expectedDrawerCash = openingFloatVal + todayNetCashHand;
 
-    const netCustomerDueChange = (todaySalesDues + todayKhataCustomerDues) - todayKhataCustomerPayments;
+    const netCustomerDueChange = (todaySalesDues + todayTeaDues + todayKhataCustomerDues) - todayKhataCustomerPayments;
     const netSupplierDueChange = (todayPurchasesDues + todayKhataSupplierDues) - todayKhataSupplierPayments;
 
-    const text = `তারিখ: ${formatDate(todayStrVal, "DD MMMM YYYY")}
+    const text = `তারিখ: ${formatDate(todayStrVal, "DD MMMM YYYY")} (দোকান ও চা স্টল সমন্বিত খাতা)
 --------------------------------------------
 ১. ক্যাশ ড্রয়ার বিবরণী (Cash Drawer Statement)
 --------------------------------------------
 (+) প্রারম্ভিক ক্যাশ ফ্লোট (Opening Cash): ${formatCurrency(openingFloatVal)}
-(+) নগদ ও ক্যাশ বিক্রয় (Cash Sales): ${formatCurrency(todaySalesCash)}
+(+) মুদি নগদ বিক্রয় (Mudi Cash Sales): ${formatCurrency(todaySalesCash)}
+(+) চা স্টল নগদ বিক্রয় (Tea Cash Sales): ${formatCurrency(todayTeaCash)}
 (+) কাস্টমার থেকে বকেয়া আদায় (Payment In): ${formatCurrency(todayKhataCustomerPayments)}
 (-) পাইকারি নগদ ক্রয় (Wholesale Paid): ${formatCurrency(todayPurchasesCash)}
 (-) সাপ্লায়ারকে বকেয়া পরিশোধ (Payment Out): ${formatCurrency(todayKhataSupplierPayments)}
-(-) দোকান পরিচালন খরচ (Operating Expenses): ${formatCurrency(todayExpensesTotal)}
+(-) মুদি দোকান খরচ (Operating Expenses): ${formatCurrency(todayExpensesTotal)}
+(-) চা স্টল খরচ (দুধ/চিনি/গ্যাস): ${formatCurrency(todayTeaExpensesTotal)}
 --------------------------------------------
 (=) নিট ক্যাশ ফ্লো (Net Cash Flow): ${formatCurrency(todayNetCashHand)}
-(=) বাক্সে নগদ থাকা উচিত (Closing Cash): ${formatCurrency(expectedDrawerCash)}
+(=) বাক্সে মোট নগদ থাকা উচিত (Closing Cash): ${formatCurrency(expectedDrawerCash)}
 
 --------------------------------------------
 ২. কাস্টমার বকেয়া বিবরণী (Customer Credit Ledger)
 --------------------------------------------
-(+) আজকের নতুন বাকি বিক্রয় (Invoice Credit): ${formatCurrency(todaySalesDues)}
+(+) মুদি নতুন বাকি বিক্রয় (Mudi Credit): ${formatCurrency(todaySalesDues)}
+(+) চা স্টল নতুন বাকি (Tea Credit): ${formatCurrency(todayTeaDues)}
 (+) ম্যানুয়াল বাকি খাতা এন্ট্রি (Khata Dues): ${formatCurrency(todayKhataCustomerDues)}
 (-) কাস্টমার থেকে বকেয়া আদায় (Dues Collected): ${formatCurrency(todayKhataCustomerPayments)}
 --------------------------------------------
@@ -147,13 +161,23 @@ export default function Dashboard() {
   };
   
   // Period Cash Flow calculations
-  const todaySalesPaid = sales.filter(s => isDateInPeriod(s.date)).reduce((acc, s) => acc + s.paidAmount, 0);
-  const todayPurchasesPaid = purchases.filter(p => isDateInPeriod(p.date)).reduce((acc, p) => acc + p.paidAmount, 0);
-  const todayExpensesPaid = expenses.filter(e => isDateInPeriod(e.date)).reduce((acc, e) => acc + e.amount, 0);
-  const todayCustomerKhataReceived = khata
+  const isTeaPeriod = (t) => isDateInPeriod(t.date || t.createdAt?.slice(0, 10));
+
+  const periodMudiSalesPaid = sales.filter(s => isDateInPeriod(s.date)).reduce((acc, s) => acc + s.paidAmount, 0);
+  const periodTeaSalesPaid = teaOrders.filter(t => !t.deleted && isTeaPeriod(t)).reduce((acc, t) => acc + (t.paid || 0), 0);
+
+  const todaySalesPaid = shopViewFilter === "mudi" ? periodMudiSalesPaid : shopViewFilter === "tea" ? periodTeaSalesPaid : (periodMudiSalesPaid + periodTeaSalesPaid);
+  
+  const todayPurchasesPaid = shopViewFilter === "tea" ? 0 : purchases.filter(p => isDateInPeriod(p.date)).reduce((acc, p) => acc + p.paidAmount, 0);
+
+  const periodMudiExpensesPaid = expenses.filter(e => isDateInPeriod(e.date)).reduce((acc, e) => acc + e.amount, 0);
+  const periodTeaExpensesPaid = teaExpenses.filter(e => !e.deleted && isTeaPeriod(e)).reduce((acc, e) => acc + (e.amount || 0), 0);
+  const todayExpensesPaid = shopViewFilter === "mudi" ? periodMudiExpensesPaid : shopViewFilter === "tea" ? periodTeaExpensesPaid : (periodMudiExpensesPaid + periodTeaExpensesPaid);
+
+  const todayCustomerKhataReceived = shopViewFilter === "tea" ? 0 : khata
     .filter(k => isDateInPeriod(k.date) && k.partyType === "customer" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
-  const todaySupplierKhataPaid = khata
+  const todaySupplierKhataPaid = shopViewFilter === "tea" ? 0 : khata
     .filter(k => isDateInPeriod(k.date) && k.partyType === "supplier" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
 
@@ -163,48 +187,65 @@ export default function Dashboard() {
 
   // Filter period sales, purchases, expenses list
   const todaySalesRecords = sales.filter(s => isDateInPeriod(s.date));
+  const todayTeaRecords = teaOrders.filter(t => !t.deleted && isTeaPeriod(t));
   const todayPurchasesRecords = purchases.filter(p => isDateInPeriod(p.date));
   const todayExpensesRecords = expenses.filter(e => isDateInPeriod(e.date));
+  const todayTeaExpensesRecords = teaExpenses.filter(e => !e.deleted && isTeaPeriod(e));
   
   // Period Sales value
-  const todaySalesVal = sales
+  const periodMudiSalesVal = sales
     .filter(s => isDateInPeriod(s.date))
     .reduce((acc, s) => acc + s.payableAmount, 0);
+  const periodTeaSalesVal = teaOrders
+    .filter(t => !t.deleted && isTeaPeriod(t))
+    .reduce((acc, t) => acc + (t.total || 0), 0);
+
+  const todaySalesVal = shopViewFilter === "mudi" ? periodMudiSalesVal : shopViewFilter === "tea" ? periodTeaSalesVal : (periodMudiSalesVal + periodTeaSalesVal);
 
   // Period Purchase value
-  const todayPurchaseVal = purchases
+  const todayPurchaseVal = shopViewFilter === "tea" ? 0 : purchases
     .filter(p => isDateInPeriod(p.date))
     .reduce((acc, p) => acc + p.totalAmount, 0);
 
   // Period Expense value
-  const todayExpenseVal = expenses
-    .filter(e => isDateInPeriod(e.date))
-    .reduce((acc, e) => acc + e.amount, 0);
+  const todayExpenseVal = shopViewFilter === "mudi" ? periodMudiExpensesPaid : shopViewFilter === "tea" ? periodTeaExpensesPaid : (periodMudiExpensesPaid + periodTeaExpensesPaid);
 
   // Period Profit: Sales Gross Profit - Expenses
   let todayGrossProfit = 0;
-  todaySalesRecords.forEach(sale => {
-    sale.items.forEach(item => {
-      const prod = products.find(p => p.id === item.productId);
-      const buyPrice = item.purchasePrice || (prod ? prod.purchasePrice : 0);
-      const profitPerItem = item.sellingPrice - buyPrice;
-      todayGrossProfit += profitPerItem * item.quantity;
+  if (shopViewFilter !== "tea") {
+    todaySalesRecords.forEach(sale => {
+      sale.items.forEach(item => {
+        const prod = products.find(p => p.id === item.productId);
+        const buyPrice = item.purchasePrice || (prod ? prod.purchasePrice : 0);
+        const profitPerItem = item.sellingPrice - buyPrice;
+        todayGrossProfit += profitPerItem * item.quantity;
+      });
     });
-  });
+  }
+  if (shopViewFilter !== "mudi") {
+    todayGrossProfit += periodTeaSalesVal;
+  }
   const todayNetProfit = todayGrossProfit - todayExpenseVal;
 
   // Cumulative Cash In Hand Calculation (All-time drawer balance)
-  const totalSalesPaid = sales.reduce((acc, s) => acc + s.paidAmount, 0);
-  const totalPurchasesPaid = purchases.reduce((acc, p) => acc + p.paidAmount, 0);
-  const totalExpensesPaid = expenses.reduce((acc, e) => acc + e.amount, 0);
-  const totalKhataCustomerReceived = khata
+  const totalMudiSalesPaid = sales.reduce((acc, s) => acc + s.paidAmount, 0);
+  const totalTeaSalesPaid = teaOrders.filter(t => !t.deleted).reduce((acc, t) => acc + (t.paid || 0), 0);
+  const totalSalesPaid = shopViewFilter === "mudi" ? totalMudiSalesPaid : shopViewFilter === "tea" ? totalTeaSalesPaid : (totalMudiSalesPaid + totalTeaSalesPaid);
+
+  const totalPurchasesPaid = shopViewFilter === "tea" ? 0 : purchases.reduce((acc, p) => acc + p.paidAmount, 0);
+  
+  const totalMudiExpensesPaid = expenses.reduce((acc, e) => acc + e.amount, 0);
+  const totalTeaExpensesPaid = teaExpenses.filter(e => !e.deleted).reduce((acc, e) => acc + (e.amount || 0), 0);
+  const totalExpensesPaid = shopViewFilter === "mudi" ? totalMudiExpensesPaid : shopViewFilter === "tea" ? totalTeaExpensesPaid : (totalMudiExpensesPaid + totalTeaExpensesPaid);
+
+  const totalKhataCustomerReceived = shopViewFilter === "tea" ? 0 : khata
     .filter(k => k.partyType === "customer" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
-  const totalKhataSupplierPaid = khata
+  const totalKhataSupplierPaid = shopViewFilter === "tea" ? 0 : khata
     .filter(k => k.partyType === "supplier" && k.type === "payment")
     .reduce((acc, k) => acc + k.amount, 0);
 
-  const cashInHand = openingFloat + (totalSalesPaid + totalKhataCustomerReceived) - 
+  const cashInHand = (shopViewFilter === "tea" ? 0 : openingFloat) + (totalSalesPaid + totalKhataCustomerReceived) - 
                      (totalPurchasesPaid + totalKhataSupplierPaid + totalExpensesPaid);
 
   // Total Due Balance
@@ -293,34 +334,70 @@ export default function Dashboard() {
 
   return (
     <div className="main-content">
-      {/* Title with Period Filter */}
-      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 mb-4 no-print">
+      {/* Combined Shop Banner (Mudi + Tea) */}
+      <CombinedShopBanner
+        mudiSalesToday={sales.filter(s => !s.deleted && s.date === todayStr).reduce((acc, s) => acc + (s.paidAmount || 0), 0)}
+        onNavigateToTea={() => navigateTo("/tea-stall")}
+      />
+
+      {/* Title with Period Filter and Shop View Switcher */}
+      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3 no-print">
         <div>
-          <h2 className="h4 mb-1">Dashboard</h2>
-          <p className="text-muted fs-7 mb-0">ব্যবসায়িক হিসাব-নিকাশ এবং সংক্ষিপ্ত চিত্র ({dashboardPeriod === "today" ? "আজকের চিত্র" : dashboardPeriod === "yesterday" ? "গতকালের চিত্র" : dashboardPeriod === "week" ? "সাপ্তাহিক চিত্র" : "মাসিক চিত্র"})</p>
+          <h2 className="h4 mb-0">Dashboard</h2>
+          <p className="text-muted fs-8 mb-0">মুদি ও চা স্টল সমন্বিত ব্যবসার সংক্ষিপ্ত চিত্র ({dashboardPeriod === "today" ? "আজকের" : dashboardPeriod === "yesterday" ? "গতকালের" : dashboardPeriod === "week" ? "সাপ্তাহিক" : "মাসিক"})</p>
         </div>
-        <div className="btn-group btn-group-sm bg-white border rounded shadow-sm w-100 w-sm-auto justify-content-between" role="group" aria-label="Period switcher">
-          {["today", "yesterday", "week", "month"].map((p) => (
+
+        {/* Combined / Mudi / Tea segmented filter */}
+        <div className="d-flex flex-wrap gap-2 align-items-center w-100 w-sm-auto justify-content-between justify-content-sm-end">
+          <div className="btn-group btn-group-sm bg-light border p-0.5 rounded shadow-sm" role="group">
             <button
-              key={p}
               type="button"
-              className={`btn btn-sm btn-custom py-1.5 flex-grow-1 flex-sm-grow-0 px-2.5 font-monospace text-capitalize ${dashboardPeriod === p ? "btn-success text-white" : "btn-light text-secondary border-0"}`}
-              style={{ borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}
-              onClick={() => {
-                setDashboardPeriod(p);
-                // Close lists to avoid confusion
-                setShowTodaySalesList(false);
-                setShowTodayPurchasesList(false);
-                setShowPeriodExpensesList(false);
-                setShowPeriodProfitBreakdown(false);
-                setShowCashBreakdown(false);
-                setShowLowStockList(false);
-                setShowHighRiskDues(false);
-              }}
+              className={`btn btn-sm py-1 px-2 fw-semibold ${shopViewFilter === "all" ? "btn-success text-white" : "btn-light text-muted border-0"}`}
+              style={{ fontSize: "11px", borderRadius: "4px" }}
+              onClick={() => setShopViewFilter("all")}
             >
-              {p}
+              🏪 পুরো দোকান
             </button>
-          ))}
+            <button
+              type="button"
+              className={`btn btn-sm py-1 px-2 fw-semibold ${shopViewFilter === "mudi" ? "btn-success text-white" : "btn-light text-muted border-0"}`}
+              style={{ fontSize: "11px", borderRadius: "4px" }}
+              onClick={() => setShopViewFilter("mudi")}
+            >
+              🛒 মুদি
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm py-1 px-2 fw-semibold ${shopViewFilter === "tea" ? "btn-success text-white" : "btn-light text-muted border-0"}`}
+              style={{ fontSize: "11px", borderRadius: "4px" }}
+              onClick={() => setShopViewFilter("tea")}
+            >
+              🍵 চা স্টল
+            </button>
+          </div>
+
+          <div className="btn-group btn-group-sm bg-white border rounded shadow-sm" role="group" aria-label="Period switcher">
+            {["today", "yesterday", "week", "month"].map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`btn btn-sm py-1 px-2 font-monospace text-capitalize ${dashboardPeriod === p ? "btn-success text-white" : "btn-light text-secondary border-0"}`}
+                style={{ borderRadius: "4px", fontSize: "11px", fontWeight: "600" }}
+                onClick={() => {
+                  setDashboardPeriod(p);
+                  setShowTodaySalesList(false);
+                  setShowTodayPurchasesList(false);
+                  setShowPeriodExpensesList(false);
+                  setShowPeriodProfitBreakdown(false);
+                  setShowCashBreakdown(false);
+                  setShowLowStockList(false);
+                  setShowHighRiskDues(false);
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -341,9 +418,14 @@ export default function Dashboard() {
             style={{ cursor: "pointer" }}
           >
             <small className="opacity-75 fs-8 text-uppercase d-flex align-items-center justify-content-center gap-1">
-              {getPeriodLabel(dashboardPeriod, "Sales")} <i className={`bi ${showTodaySalesList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
+              {getPeriodLabel(dashboardPeriod, "Sales")} {shopViewFilter === "all" ? "(মুদি + চা)" : shopViewFilter === "mudi" ? "(মুদি)" : "(চা স্টল)"} <i className={`bi ${showTodaySalesList ? "bi-chevron-up" : "bi-chevron-down"}`}></i>
             </small>
             <h3 className="m-0 fw-bold">{formatCurrency(todaySalesVal)}</h3>
+            {shopViewFilter === "all" && (
+              <div className="mt-1 opacity-75 fs-9">
+                মুদি: {formatCurrency(periodMudiSalesVal)} • চা: {formatCurrency(periodTeaSalesVal)}
+              </div>
+            )}
           </div>
           <div 
             className="col-6 cursor-pointer pointer-active" 
@@ -455,18 +537,39 @@ export default function Dashboard() {
       {showTodaySalesList && (
         <div className="card-custom bg-white border border-success-subtle p-3 mb-3 no-print">
           <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
-            <h5 className="h6 fw-bold text-success m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Invoices")} (বিক্রয় বিবরণী)</h5>
+            <h5 className="h6 fw-bold text-success m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Invoices & Tokens")} (বিক্রয় ও টোকেন বিবরণী)</h5>
             <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowTodaySalesList(false)}></button>
           </div>
           
-          {todaySalesRecords.length === 0 ? (
+          {(shopViewFilter === "tea" ? todayTeaRecords.length === 0 : (todaySalesRecords.length === 0 && (shopViewFilter === "mudi" || todayTeaRecords.length === 0))) ? (
             <div className="text-center text-muted fs-8 py-3">নির্বাচিত সময়ের মধ্যে কোনো বিক্রয় রসিদ তৈরি হয়নি।</div>
           ) : (
-            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-              {todaySalesRecords.map((sale) => (
+            <div style={{ maxHeight: "280px", overflowY: "auto" }}>
+              {/* Tea orders if 'all' or 'tea' */}
+              {shopViewFilter !== "mudi" && todayTeaRecords.map((t) => (
+                <div key={"tea-" + t.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light bg-light-subtle px-1 rounded mb-1">
+                  <div>
+                    <div className="fw-semibold fs-7 text-dark d-flex align-items-center gap-1">
+                      <span className="badge bg-success-subtle text-success fs-9 border border-success-subtle">🍵 চা স্টল #{t.tokenNo}</span>
+                      <span>{t.customerName || "খুচরা ক্রেতা"}</span>
+                    </div>
+                    <small className="text-muted fs-9 d-block">
+                      {t.items?.map(it => `${it.name} (${it.qty})`).join(", ")} • {t.paymentMethod || "নগদ"}
+                    </small>
+                  </div>
+                  <div className="text-end">
+                    <div className="fw-bold fs-7 text-success">{formatCurrency(t.total)}</div>
+                    {t.due > 0 && <small className="badge bg-danger-subtle text-danger fs-9 px-1">Due: {formatCurrency(t.due)}</small>}
+                  </div>
+                </div>
+              ))}
+
+              {/* Mudi sales if 'all' or 'mudi' */}
+              {shopViewFilter !== "tea" && todaySalesRecords.map((sale) => (
                 <div key={sale.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
                   <div>
-                    <div className="fw-semibold fs-7 text-success">
+                    <div className="fw-semibold fs-7 text-success d-flex align-items-center gap-1">
+                      <span className="badge bg-primary-subtle text-primary fs-9 border border-primary-subtle">🛒 মুদি</span>
                       <CopyableText text={sale.invoiceNumber} />
                     </div>
                     <small className="text-muted fs-9">
@@ -551,24 +654,45 @@ export default function Dashboard() {
       {showPeriodExpensesList && (
         <div className="card-custom bg-white border border-danger-subtle p-3 mb-3 no-print">
           <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
-            <h5 className="h6 fw-bold text-danger m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Expenses")} (খরচের বিবরণী)</h5>
+            <h5 className="h6 fw-bold text-danger m-0 font-monospace">{getPeriodLabel(dashboardPeriod, "Expenses")} (মুদি ও চা খরচ)</h5>
             <button className="btn-close" style={{ fontSize: "10px" }} onClick={() => setShowPeriodExpensesList(false)}></button>
           </div>
           
-          {todayExpensesRecords.length === 0 ? (
+          {(shopViewFilter === "tea" ? todayTeaExpensesRecords.length === 0 : (todayExpensesRecords.length === 0 && (shopViewFilter === "mudi" || todayTeaExpensesRecords.length === 0))) ? (
             <div className="text-center text-muted fs-8 py-3">নির্বাচিত সময়ের মধ্যে কোনো খরচ রেকর্ড করা হয়নি।</div>
           ) : (
             <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-              {todayExpensesRecords.map((exp) => (
+              {/* Tea expenses if 'all' or 'tea' */}
+              {shopViewFilter !== "mudi" && todayTeaExpensesRecords.map((e) => (
+                <div key={"tea-exp-" + e.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
+                  <div>
+                    <div className="fw-semibold fs-7 text-dark d-flex align-items-center gap-1">
+                      <span className="badge bg-warning-subtle text-warning-emphasis fs-9 border">🍵 চা খরচ: {e.category}</span>
+                    </div>
+                    <small className="text-muted fs-9">
+                      {e.date} • {e.description || "চা/সিগারেট কাঁচামাল বা গ্যাস"}
+                    </small>
+                  </div>
+                  <div className="text-end">
+                    <div className="fw-bold fs-7 text-danger">-{formatCurrency(e.amount)}</div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Mudi expenses if 'all' or 'mudi' */}
+              {shopViewFilter !== "tea" && todayExpensesRecords.map((exp) => (
                 <div key={exp.id} className="d-flex justify-content-between align-items-center py-2 border-bottom border-light">
                   <div>
-                    <div className="fw-semibold fs-7 text-dark">{exp.category}</div>
+                    <div className="fw-semibold fs-7 text-dark d-flex align-items-center gap-1">
+                      <span className="badge bg-light text-secondary fs-9 border">🛒 মুদি</span>
+                      <span>{exp.category}</span>
+                    </div>
                     <small className="text-muted fs-9">
                       {dayjs(exp.date).format("DD MMM YYYY")} • {exp.description || "দোকান খরচ"}
                     </small>
                   </div>
                   <div className="text-end">
-                    <div className="fw-bold fs-7 text-danger">{formatCurrency(exp.amount)}</div>
+                    <div className="fw-bold fs-7 text-danger">-{formatCurrency(exp.amount)}</div>
                   </div>
                 </div>
               ))}
@@ -629,6 +753,12 @@ export default function Dashboard() {
                 <span>Total Gross Sales Profit (বিক্রয় লাভ):</span>
                 <span className="text-success">+{formatCurrency(todayGrossProfit)}</span>
               </div>
+              {shopViewFilter === "all" && (
+                <div className="d-flex justify-content-between text-muted fs-9 ps-2">
+                  <span>↳ চা স্টল বিক্রয় অবদান:</span>
+                  <span className="text-success">+{formatCurrency(periodTeaSalesVal)}</span>
+                </div>
+              )}
               <div className="d-flex justify-content-between text-muted fs-8">
                 <span>Total Period Expenses (মোট খরচ):</span>
                 <span className="text-danger">-{formatCurrency(todayExpenseVal)}</span>

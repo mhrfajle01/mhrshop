@@ -5,6 +5,7 @@ import { exportToExcel, exportEnhancedReportToExcel } from "../utils/excelGenera
 import dayjs from "dayjs";
 import CopyableText from "../components/CopyableText";
 import Chart from "chart.js/auto";
+import TeaReportSection from "../tea/reports/TeaReportSection";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
@@ -349,6 +350,9 @@ export default function Reports() {
             <canvas ref={chartRef}></canvas>
           </div>
         </div>
+
+        {/* Integrated Tea & Cigarette Stall Report Section */}
+        <TeaReportSection startDate={startDate} endDate={endDate} />
 
         {/* Export operations */}
         <div className="card-custom bg-white border border-light p-3 mb-4 no-print">

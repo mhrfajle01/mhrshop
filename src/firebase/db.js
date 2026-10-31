@@ -939,7 +939,73 @@ export const hardDeleteDoc = async (uid, isLocal, collectionName, id, label) => 
   await logActivity(uid, isLocal, { action: "Delete", details: `${label} চিরতরে মুছে ফেলা হয়েছে (Permanent)` });
 };
 
-export const factoryResetUserData = async (uid, isLocal) => {
+export const factoryResetUserData = async (uid, isLocal, options = {}) => {
+  const { startDate, endDate, keepInTrash24h = true } = options;
+  const isDateRange = Boolean(startDate && endDate);
+
+  const cols = ["sales", "purchases", "expenses", "khata"];
+  const teaCols = ["teaOrders", "teaExpenses"];
+
+  // Helper date checker
+  const isInRange = (dateStr) => {
+    if (!dateStr) return false;
+    const d = dateStr.slice(0, 10);
+    return d >= startDate && d <= endDate;
+  };
+
+  if (isDateRange) {
+    const batchId = "reset_" + Date.now();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    let totalMoved = 0;
+
+    for (const colName of [...cols, ...teaCols]) {
+      const isTea = teaCols.includes(colName);
+      let docsList = [];
+      if (!isLocal && isFirebaseConfigured && db) {
+        const snap = await getDocs(collection(db, "users", uid, colName));
+        docsList = snap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+      } else {
+        const raw = localStorage.getItem(isTea ? `tea_stall_${uid}_${colName === "teaOrders" ? "orders" : "expenses"}` : `shop_${uid}_${colName}`);
+        docsList = raw ? JSON.parse(raw) : [];
+      }
+
+      for (const item of docsList) {
+        const itemDate = item.date || item.createdAt?.slice(0, 10);
+        if (isInRange(itemDate)) {
+          totalMoved++;
+          if (keepInTrash24h) {
+            // Soft delete with 24h recovery mark
+            const trashData = {
+              deleted: true,
+              deletedAt: new Date().toISOString(),
+              factoryResetBatchId: batchId,
+              factoryResetExpiresAt: expiresAt
+            };
+            if (!isLocal && isFirebaseConfigured && db && item.ref) {
+              await updateDoc(item.ref, trashData);
+            } else {
+              saveLocalDoc(uid, isTea ? colName : colName, item.id, { ...item, ...trashData });
+            }
+          } else {
+            // Permanent
+            if (!isLocal && isFirebaseConfigured && db && item.ref) {
+              await deleteDoc(item.ref);
+            } else {
+              deleteLocalDoc(uid, colName, item.id);
+            }
+          }
+        }
+      }
+    }
+
+    await logActivity(uid, isLocal, { 
+      action: "Reset", 
+      details: `${startDate} হতে ${endDate} তারিখের ${totalMoved} টি ডাটা ফ্যাক্টরি রিসেট (রিসাইকেল বিনে সংরক্ষিত)` 
+    });
+    return { success: true, totalMoved, batchId, expiresAt };
+  }
+
+  // Full Wipe (All dates)
   if (isLocal) {
     localStorage.clear();
     return { success: true };
@@ -951,8 +1017,8 @@ export const factoryResetUserData = async (uid, isLocal) => {
   }
 
   try {
-    const cols = ["categories", "products", "customers", "suppliers", "expenses", "sales", "purchases", "khata", "settings", "activities"];
-    for (const colName of cols) {
+    const allCols = ["categories", "products", "customers", "suppliers", "expenses", "sales", "purchases", "khata", "settings", "activities", "teaOrders", "teaExpenses", "teaMaterials", "teaMenu"];
+    for (const colName of allCols) {
       const colRef = collection(db, "users", uid, colName);
       const snap = await getDocs(colRef);
       const deletePromises = snap.docs.map(doc => deleteDoc(doc.ref));

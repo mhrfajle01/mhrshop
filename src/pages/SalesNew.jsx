@@ -2,7 +2,9 @@ import React, { useState, useEffect } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency } from "../utils/formatters";
+import { useModal } from "../context/ModalContext";
 import SalesInvoice from "../components/SalesInvoice";
+import WeightCalculatorModal from "../components/WeightCalculatorModal";
 import dayjs from "dayjs";
 
 export default function SalesNew() {
@@ -15,6 +17,7 @@ export default function SalesNew() {
     settings 
   } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   // Cart State
   const [cart, setCart] = useState([]);
@@ -39,6 +42,7 @@ export default function SalesNew() {
   const [createdSale, setCreatedSale] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [weightModalProduct, setWeightModalProduct] = useState(null);
 
   // Auto calculate total
   const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.quantity), 0);
@@ -56,21 +60,23 @@ export default function SalesNew() {
   };
 
   // Cart Operations
-  const addToCart = (product) => {
+  const addToCartWithQty = async (product, targetQty = 1) => {
     const existing = cart.find(item => item.productId === product.id);
     if (existing) {
-      if (existing.quantity >= product.stock) {
-        alert(`দুঃখিত! এই পণ্যের পর্যাপ্ত স্টক নেই। বর্তমান স্টক: ${product.stock}`);
+      const newQty = Number((existing.quantity + targetQty).toFixed(4));
+      if (newQty > product.stock) {
+        await showAlert(`দুঃখিত! এই পণ্যের পর্যাপ্ত স্টক নেই। বর্তমান স্টক: ${product.stock}`, "স্টক সতর্কতা");
         return;
       }
       setCart(cart.map(item => 
         item.productId === product.id 
-          ? { ...item, quantity: item.quantity + 1 }
+          ? { ...item, quantity: newQty }
           : item
       ));
     } else {
-      if (product.stock <= 0) {
-        if (!window.confirm("পণ্যের স্টক নেই (0 স্টক)। আপনি কি তবুও বিক্রয় করতে চান?")) {
+      if (product.stock < targetQty) {
+        const ok = await showConfirm(`পণ্যের পর্যাপ্ত স্টক নেই (${product.stock} আছে)। আপনি কি তবুও বিক্রয় করতে চান?`, "স্টক সতর্কতা");
+        if (!ok) {
           return;
         }
       }
@@ -79,7 +85,7 @@ export default function SalesNew() {
         productName: product.name,
         purchasePrice: product.purchasePrice,
         sellingPrice: product.sellingPrice,
-        quantity: 1,
+        quantity: targetQty,
         unit: product.unit || "Piece",
         stockLimit: product.stock
       }]);
@@ -87,13 +93,28 @@ export default function SalesNew() {
     setProductQuery(""); // Clear search
   };
 
-  const updateCartQty = (productId, qty) => {
+  const addToCart = (product) => {
+    addToCartWithQty(product, 1);
+  };
+
+  const updateCartQty = async (productId, qty) => {
     const item = cart.find(i => i.productId === productId);
     if (!item) return;
 
-    const newQty = Math.max(1, Number(qty));
+    if (qty === "" || isNaN(qty)) {
+      setCart(cart.map(i => i.productId === productId ? { ...i, quantity: "" } : i));
+      return;
+    }
+
+    const parsedQty = parseFloat(qty);
+    if (parsedQty <= 0) {
+      removeFromCart(productId);
+      return;
+    }
+
+    const newQty = Number(parsedQty.toFixed(4));
     if (newQty > item.stockLimit) {
-      alert(`দুঃখিত! এই পণ্যের পর্যাপ্ত স্টক নেই। বর্তমান স্টক: ${item.stockLimit}`);
+      await showAlert(`দুঃখিত! এই পণ্যের পর্যাপ্ত স্টক নেই। বর্তমান স্টক: ${item.stockLimit}`, "স্টক সতর্কতা");
       return;
     }
 
@@ -128,9 +149,9 @@ export default function SalesNew() {
       setQuickCustName("");
       setQuickCustPhone("");
       setShowQuickCust(false);
-      alert("কাস্টমার প্রোফাইল যোগ করা হয়েছে।");
+      await showAlert("কাস্টমার প্রোফাইল যোগ করা হয়েছে।", "সফল");
     } catch (e) {
-      alert("কাস্টমার সেভ করতে সমস্যা হয়েছে।");
+      await showAlert("কাস্টমার সেভ করতে সমস্যা হয়েছে।", "সমস্যা");
     }
   };
 
@@ -268,9 +289,23 @@ export default function SalesNew() {
                       <div className="fw-semibold fs-7">{prod.name}</div>
                       <small className="text-muted fs-9">স্টক: {prod.stock} {prod.unit || "পিস"}</small>
                     </div>
-                    <div className="text-end">
+                    <div className="text-end d-flex align-items-center gap-1">
                       <span className="badge bg-success-subtle text-success fs-8">{formatCurrency(prod.sellingPrice)}</span>
-                      <i className="bi bi-plus-circle text-success ms-2 fs-6 align-middle"></i>
+                      {/* Weight calculator button for kg/liter/gm products */}
+                      {["kg", "কেজি", "লিটার", "liter", "gm", "গ্রাম"].some(u => (prod.unit || "").toLowerCase().includes(u)) && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-success py-0 px-1.5"
+                          title="গ্রাম/টাকা ওজনের হিসাব"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setWeightModalProduct(prod);
+                          }}
+                        >
+                          <i className="bi bi-calculator"></i> গ্রাম/৳
+                        </button>
+                      )}
+                      <i className="bi bi-plus-circle text-success fs-6 align-middle" onClick={() => addToCart(prod)}></i>
                     </div>
                   </div>
                 ))
@@ -297,20 +332,37 @@ export default function SalesNew() {
                     
                     <div className="d-flex align-items-center justify-content-center" style={{ width: "30%" }}>
                       <button 
+                        type="button"
                         className="btn btn-sm btn-light border p-1"
-                        onClick={() => updateCartQty(item.productId, item.quantity - 1)}
+                        onClick={() => {
+                          const curr = Number(item.quantity) || 0;
+                          const step = curr <= 1 && curr > 0.1 ? 0.25 : 1;
+                          updateCartQty(item.productId, Math.max(0, Number((curr - step).toFixed(4))));
+                        }}
                       >
                         -
                       </button>
                       <input 
                         type="number" 
+                        step="any"
+                        min="0"
                         className="pos-input mx-1 fs-7"
                         value={item.quantity}
                         onChange={(e) => updateCartQty(item.productId, e.target.value)}
+                        onBlur={(e) => {
+                          if (!e.target.value || Number(e.target.value) <= 0) {
+                            updateCartQty(item.productId, 1);
+                          }
+                        }}
                       />
                       <button 
+                        type="button"
                         className="btn btn-sm btn-light border p-1"
-                        onClick={() => updateCartQty(item.productId, item.quantity + 1)}
+                        onClick={() => {
+                          const curr = Number(item.quantity) || 0;
+                          const step = curr < 1 ? 0.25 : 1;
+                          updateCartQty(item.productId, Number((curr + step).toFixed(4)));
+                        }}
                       >
                         +
                       </button>
@@ -572,6 +624,15 @@ export default function SalesNew() {
           </div>
         </div>
       </div>
+
+      {/* Weight & Gram Calculator Modal */}
+      {weightModalProduct && (
+        <WeightCalculatorModal
+          product={weightModalProduct}
+          onApply={(prod, qty) => addToCartWithQty(prod, qty)}
+          onClose={() => setWeightModalProduct(null)}
+        />
+      )}
 
       {/* Printer container */}
       {createdSale && (

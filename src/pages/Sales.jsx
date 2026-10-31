@@ -2,16 +2,21 @@ import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
+import { useModal } from "../context/ModalContext";
 import SalesInvoice from "../components/SalesInvoice";
 import CopyableText from "../components/CopyableText";
+import TeaPOSReceipt from "../tea/pos/TeaPOSReceipt";
 
 export default function Sales() {
-  const { sales, deleteSaleItem, loading } = useData();
+  const { sales = [], teaOrders = [], deleteSaleItem, loading } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSale, setSelectedSale] = useState(null); // for showing detailed printable invoice in Modal
+  const [selectedTeaOrder, setSelectedTeaOrder] = useState(null);
+  const [salesTypeFilter, setSalesTypeFilter] = useState("all"); // 'all' | 'mudi' | 'tea'
 
   const handlePrint = (sale) => {
     setSelectedSale(sale);
@@ -22,39 +27,113 @@ export default function Sales() {
   };
 
   const handleDelete = async (id, invNum) => {
-    if (window.confirm(`রসিদ নং "${invNum}" ডিলিট করলে পণ্যসমূহের স্টক আগের অবস্থানে ফিরিয়ে নেওয়া (Reverse) হবে। আপনি কি নিশ্চিত?`)) {
+    const ok = await showConfirm(`রসিদ নং "${invNum}" ডিলিট করলে পণ্যসমূহের স্টক আগের অবস্থানে ফিরিয়ে নেওয়া (Reverse) হবে। আপনি কি নিশ্চিত?`, "বিক্রয় রসিদ ডিলিট", true);
+    if (ok) {
       try {
         await deleteSaleItem(id);
-        alert("বিক্রয় রসিদটি বাতিল ও ডিলিট করা হয়েছে।");
+        await showAlert("বিক্রয় রসিদটি বাতিল ও ডিলিট করা হয়েছে।", "সফল");
       } catch (err) {
-        alert("ডিলিট করতে সমস্যা হয়েছে।");
+        await showAlert("ডিলিট করতে সমস্যা হয়েছে।", "সমস্যা");
       }
     }
   };
 
+  // Unified Sales List Mapping
+  const unifiedSales = [];
+
+  if (salesTypeFilter !== "tea") {
+    sales.forEach(s => {
+      unifiedSales.push({
+        id: s.id,
+        origId: s.id,
+        type: "mudi",
+        invoiceNumber: s.invoiceNumber,
+        date: s.date,
+        customerName: s.customerName || "খুচরা ক্রেতা",
+        paymentMethod: s.paymentMethod,
+        payableAmount: s.payableAmount,
+        paidAmount: s.paidAmount,
+        dueAmount: s.dueAmount,
+        itemsSummary: s.items?.map(it => it.name).join(", "),
+        raw: s
+      });
+    });
+  }
+
+  if (salesTypeFilter !== "mudi") {
+    teaOrders.filter(t => !t.deleted).forEach(t => {
+      unifiedSales.push({
+        id: "tea-" + t.id,
+        origId: t.id,
+        type: "tea",
+        invoiceNumber: `TEA-#${t.tokenNo}`,
+        date: t.date || t.createdAt?.slice(0, 10),
+        customerName: t.customerName || "চা স্টল কাস্টমার",
+        paymentMethod: t.paymentMethod || "নগদ",
+        payableAmount: t.total,
+        paidAmount: t.paid,
+        dueAmount: t.due,
+        itemsSummary: t.items?.map(it => `${it.name} (${it.qty})`).join(", "),
+        raw: t
+      });
+    });
+  }
+
+  // Sort by date/createdAt descending
+  unifiedSales.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
   // Filter Sales
-  const filteredSales = sales.filter(sale => {
+  const filteredSales = unifiedSales.filter(sale => {
     const term = searchQuery.toLowerCase();
     return (
       sale.invoiceNumber.toLowerCase().includes(term) ||
-      (sale.customerName && sale.customerName.toLowerCase().includes(term))
+      (sale.customerName && sale.customerName.toLowerCase().includes(term)) ||
+      (sale.itemsSummary && sale.itemsSummary.toLowerCase().includes(term))
     );
   });
 
   return (
     <div className="main-content">
       {/* Title */}
-      <div className="d-flex justify-content-between align-items-center mb-4 no-print">
+      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3 no-print">
         <div>
-          <h2 className="h4 mb-1">Sales</h2>
-          <p className="text-muted fs-7">বিক্রয় রসিদ ও চালানের ইতিহাস</p>
+          <h2 className="h4 mb-0">Sales (বিক্রয় রেজিস্ট্রি)</h2>
+          <p className="text-muted fs-8 mb-0">মুদি দোকান ও চা স্টলের সমন্বিত বিক্রয় তালিকা</p>
         </div>
-        <button 
-          className="btn btn-sm btn-custom btn-custom-primary font-monospace"
-          onClick={() => navigateTo("/sales/new")}
-        >
-          <i className="bi bi-cart-plus"></i> New Sale
-        </button>
+        <div className="d-flex gap-2">
+          <div className="btn-group btn-group-sm bg-light border p-0.5 rounded shadow-sm" role="group">
+            <button
+              type="button"
+              className={`btn btn-sm py-1 px-2 fw-semibold ${salesTypeFilter === "all" ? "btn-success text-white" : "btn-light text-muted border-0"}`}
+              style={{ fontSize: "11px", borderRadius: "4px" }}
+              onClick={() => setSalesTypeFilter("all")}
+            >
+              সব ({unifiedSales.length})
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm py-1 px-2 fw-semibold ${salesTypeFilter === "mudi" ? "btn-success text-white" : "btn-light text-muted border-0"}`}
+              style={{ fontSize: "11px", borderRadius: "4px" }}
+              onClick={() => setSalesTypeFilter("mudi")}
+            >
+              🛒 মুদি ({sales.length})
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm py-1 px-2 fw-semibold ${salesTypeFilter === "tea" ? "btn-success text-white" : "btn-light text-muted border-0"}`}
+              style={{ fontSize: "11px", borderRadius: "4px" }}
+              onClick={() => setSalesTypeFilter("tea")}
+            >
+              🍵 চা স্টল ({teaOrders.filter(t => !t.deleted).length})
+            </button>
+          </div>
+          <button 
+            className="btn btn-sm btn-custom btn-custom-primary font-monospace py-1"
+            onClick={() => navigateTo("/sales/new")}
+          >
+            <i className="bi bi-cart-plus"></i> New Sale
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -95,7 +174,12 @@ export default function Sales() {
                 {filteredSales.map((sale) => (
                   <tr key={sale.id}>
                     <td>
-                      <div className="fw-semibold text-success" style={{ fontSize: "13px" }}>
+                      <div className="fw-semibold text-success d-flex align-items-center gap-1" style={{ fontSize: "13px" }}>
+                        {sale.type === "tea" ? (
+                          <span className="badge bg-success-subtle text-success fs-9 border border-success-subtle">🍵 চা স্টল</span>
+                        ) : (
+                          <span className="badge bg-primary-subtle text-primary fs-9 border border-primary-subtle">🛒 মুদি</span>
+                        )}
                         <CopyableText text={sale.invoiceNumber} />
                       </div>
                       <small className="text-muted" style={{ fontSize: "11px" }}>
@@ -109,8 +193,13 @@ export default function Sales() {
                       </span>
                       {sale.dueAmount > 0 && (
                         <span className="badge bg-danger-subtle text-danger ms-1 fs-9">
-                          Due
+                          Due: {formatCurrency(sale.dueAmount)}
                         </span>
+                      )}
+                      {sale.itemsSummary && (
+                        <small className="text-muted d-block text-truncate" style={{ maxWidth: "180px", fontSize: "10px" }}>
+                          {sale.itemsSummary}
+                        </small>
                       )}
                     </td>
                     <td className="text-end">
@@ -124,12 +213,15 @@ export default function Sales() {
                         <button 
                           className="btn btn-sm btn-outline-success p-1"
                           onClick={() => {
-                            setSelectedSale(sale);
-                            // Show modal programmatically using Bootstrap API
-                            const modalEl = document.getElementById("invoiceModal");
-                            if (modalEl) {
-                              const modal = new window.bootstrap.Modal(modalEl);
-                              modal.show();
+                            if (sale.type === "tea") {
+                              setSelectedTeaOrder(sale.raw);
+                            } else {
+                              setSelectedSale(sale.raw);
+                              const modalEl = document.getElementById("invoiceModal");
+                              if (modalEl) {
+                                const modal = new window.bootstrap.Modal(modalEl);
+                                modal.show();
+                              }
                             }
                           }}
                           title="View Invoice"
@@ -138,18 +230,26 @@ export default function Sales() {
                         </button>
                         <button 
                           className="btn btn-sm btn-outline-primary p-1"
-                          onClick={() => handlePrint(sale)}
+                          onClick={() => {
+                            if (sale.type === "tea") {
+                              setSelectedTeaOrder(sale.raw);
+                            } else {
+                              handlePrint(sale.raw);
+                            }
+                          }}
                           title="Print"
                         >
                           <i className="bi bi-printer"></i>
                         </button>
-                        <button 
-                          className="btn btn-sm btn-outline-danger p-1"
-                          onClick={() => handleDelete(sale.id, sale.invoiceNumber)}
-                          title="Delete / Reverse"
-                        >
-                          <i className="bi bi-trash"></i>
-                        </button>
+                        {sale.type === "mudi" && (
+                          <button 
+                            className="btn btn-sm btn-outline-danger p-1"
+                            onClick={() => handleDelete(sale.origId, sale.invoiceNumber)}
+                            title="Delete / Reverse"
+                          >
+                            <i className="bi bi-trash"></i>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -198,6 +298,14 @@ export default function Sales() {
           </div>
         </div>
       </div>
+
+      {/* Tea POS Receipt Modal */}
+      {selectedTeaOrder && (
+        <TeaPOSReceipt
+          order={selectedTeaOrder}
+          onClose={() => setSelectedTeaOrder(null)}
+        />
+      )}
 
       {/* Hidden print container that shows only in @media print */}
       {selectedSale && (

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
 import { formatCurrency } from "../utils/formatters";
 
 export default function Customers() {
@@ -12,6 +13,7 @@ export default function Customers() {
     loading 
   } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   // Mode: 'list' or 'form'
   const [mode, setMode] = useState("list");
@@ -83,13 +85,14 @@ export default function Customers() {
   };
 
   const handleDelete = async (id, custName) => {
-    if (window.confirm(`আপনি কি সত্যিই "${custName}" কাস্টমারটি মুছে ফেলতে চান?`)) {
+    const ok = await showConfirm(`আপনি কি সত্যিই "${custName}" কাস্টমারটি মুছে ফেলতে চান?`, "কাস্টমার ডিলিট", true);
+    if (ok) {
       try {
         await deleteCustomerItem(id, custName);
         setSuccess("কাস্টমার প্রোফাইল মুছে ফেলা হয়েছে।");
         setTimeout(() => setSuccess(""), 3000);
       } catch (err) {
-        alert("কাস্টমার মুছতে ব্যর্থ হয়েছে।");
+        await showAlert("কাস্টমার মুছতে ব্যর্থ হয়েছে।", "সমস্যা");
       }
     }
   };

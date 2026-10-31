@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import dayjs from "dayjs";
 import { CopyableTextParser } from "../components/CopyableText";
@@ -15,6 +16,7 @@ export default function Khata() {
     loading 
   } = useData();
   const { routeParams, navigateTo } = useRouter();
+  const { showConfirm } = useModal();
 
   // Selected Account IDs
   const [activeAccountId, setActiveAccountId] = useState(null);
@@ -326,8 +328,9 @@ export default function Khata() {
                         <td className="text-end no-print">
                           <button
                             className="btn btn-sm btn-link text-danger p-0 border-0"
-                            onClick={() => {
-                              if (window.confirm(`আপনি কি সত্যিই ৳${item.amount} মূল্যের এই লেনদেনটি মুছে ফেলতে চান? এটি কাস্টমার/সাপ্লায়ারের বকেয়া ব্যালেন্স পুনর্নির্ধারণ করবে।`)) {
+                            onClick={async () => {
+                              const ok = await showConfirm(`আপনি কি সত্যিই ৳${item.amount} মূল্যের এই লেনদেনটি মুছে ফেলতে চান? এটি কাস্টমার/সাপ্লায়ারের বকেয়া ব্যালেন্স পুনর্নির্ধারণ করবে।`, "লেনদেন বাতিল", true);
+                              if (ok) {
                                 deleteKhataItem(item.id);
                               }
                             }}

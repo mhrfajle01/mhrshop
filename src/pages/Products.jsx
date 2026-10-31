@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
 import { formatCurrency } from "../utils/formatters";
 
 export default function Products() {
@@ -13,6 +14,7 @@ export default function Products() {
     loading 
   } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   // Navigation state inside page: 'list' or 'form'
   const [mode, setMode] = useState("list"); // 'list' | 'form'
@@ -90,7 +92,8 @@ export default function Products() {
     }
     
     if (Number(sellingPrice) < Number(purchasePrice)) {
-      if (!window.confirm("সতর্কতা: বিক্রয়মূল্য ক্রয়মূল্যের চেয়ে কম! আপনি কি তবুও সংরক্ষণ করতে চান?")) {
+      const ok = await showConfirm("সতর্কতা: বিক্রয়মূল্য ক্রয়মূল্যের চেয়ে কম! আপনি কি তবুও সংরক্ষণ করতে চান?", "দাম সতর্কতা");
+      if (!ok) {
         return;
       }
     }
@@ -127,13 +130,14 @@ export default function Products() {
   };
 
   const handleDelete = async (id, prodName) => {
-    if (window.confirm(`আপনি কি সত্যিই "${prodName}" পণ্যটি মুছে ফেলতে চান?`)) {
+    const ok = await showConfirm(`আপনি কি সত্যিই "${prodName}" পণ্যটি মুছে ফেলতে চান?`, "পণ্য ডিলিট", true);
+    if (ok) {
       try {
         await deleteProductItem(id, prodName);
         setSuccess("পণ্য মুছে ফেলা হয়েছে।");
         setTimeout(() => setSuccess(""), 3000);
       } catch (err) {
-        alert("পণ্যটি মুছে ফেলা সম্ভব হয়নি।");
+        await showAlert("পণ্যটি মুছে ফেলা সম্ভব হয়নি।", "সমস্যা");
       }
     }
   };

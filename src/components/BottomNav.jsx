@@ -27,6 +27,14 @@ export default function BottomNav() {
       </div>
 
       <div 
+        className={`bottom-nav-item ${currentView === "tea-stall" ? "active" : ""}`}
+        onClick={() => navigateTo("/tea-stall")}
+      >
+        <i className="bi bi-cup-hot-fill"></i>
+        <span>চা স্টল</span>
+      </div>
+
+      <div 
         className={`bottom-nav-item ${currentView === "products" || currentView === "categories" ? "active" : ""}`}
         onClick={() => navigateTo("/products")}
       >

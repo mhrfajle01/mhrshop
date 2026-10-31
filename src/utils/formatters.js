@@ -45,3 +45,19 @@ export const getRelativeTime = (dateStr) => {
     return d.format("DD MMM, hh:mm A");
   }
 };
+
+/**
+ * Get current date string formatted as YYYY-MM-DD in Asia/Dhaka (Bangladesh) timezone
+ */
+export const getBdToday = () => {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Dhaka",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+  } catch (e) {
+    return dayjs().format("YYYY-MM-DD");
+  }
+};

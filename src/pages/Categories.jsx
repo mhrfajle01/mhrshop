@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { useRouter } from "../context/RouterContext";
+import { useModal } from "../context/ModalContext";
 
 export default function Categories() {
   const { categories, addNewCategory, updateCategoryItem, deleteCategoryItem, loading } = useData();
   const { navigateTo } = useRouter();
+  const { showAlert, showConfirm } = useModal();
 
   const [categoryName, setCategoryName] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -59,13 +61,14 @@ export default function Categories() {
   };
 
   const handleDelete = async (id, name) => {
-    if (window.confirm(`আপনি কি সত্যিই "${name}" ক্যাটাগরি মুছে ফেলতে চান?`)) {
+    const ok = await showConfirm(`আপনি কি সত্যিই "${name}" ক্যাটাগরি মুছে ফেলতে চান?`, "ক্যাটাগরি ডিলিট", true);
+    if (ok) {
       try {
         await deleteCategoryItem(id, name);
         setSuccess("ক্যাটাগরি মুছে ফেলা হয়েছে।");
         setTimeout(() => setSuccess(""), 3000);
       } catch (err) {
-        alert("ক্যাটাগরি মুছতে ব্যর্থ হয়েছে।");
+        await showAlert("ক্যাটাগরি মুছতে ব্যর্থ হয়েছে।", "সমস্যা");
       }
     }
   };
