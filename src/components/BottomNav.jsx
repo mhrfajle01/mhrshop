@@ -27,6 +27,14 @@ export default function BottomNav() {
       </div>
 
       <div 
+        className={`bottom-nav-item ${currentView === "day-close" ? "active text-warning" : ""}`}
+        onClick={() => navigateTo("/day-close")}
+      >
+        <i className="bi bi-moon-stars-fill"></i>
+        <span>Day Close</span>
+      </div>
+
+      <div 
         className={`bottom-nav-item ${currentView === "tea-stall" ? "active" : ""}`}
         onClick={() => navigateTo("/tea-stall")}
       >

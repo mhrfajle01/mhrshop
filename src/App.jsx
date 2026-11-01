@@ -25,6 +25,7 @@ import Suppliers from "./pages/Suppliers";
 import Khata from "./pages/Khata";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import DayClose from "./pages/DayClose";
 import Trash from "./pages/Trash";
 import TeaStall from "./tea/TeaStall";
 
@@ -67,6 +68,8 @@ function AppContent() {
         return <Reports />;
       case "settings":
         return <Settings />;
+      case "day-close":
+        return <DayClose />;
       case "tea-stall":
         return <TeaStall />;
       case "trash":

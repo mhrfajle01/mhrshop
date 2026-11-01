@@ -340,6 +340,26 @@ export default function Dashboard() {
         onNavigateToTea={() => navigateTo("/tea-stall")}
       />
 
+      {/* Day Close / Night Hisab Callout Card */}
+      <div 
+        className="card-custom bg-white border border-warning-subtle shadow-sm p-3 mb-3 d-flex align-items-center justify-content-between cursor-pointer"
+        onClick={() => navigateTo("/day-close")}
+        style={{ cursor: "pointer", background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)" }}
+      >
+        <div className="d-flex align-items-center gap-3">
+          <div className="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: "42px", height: "42px", minWidth: "42px" }}>
+            <i className="bi bi-moon-stars-fill fs-5"></i>
+          </div>
+          <div>
+            <div className="fw-bold text-dark fs-7">রাতের হিসাব ও স্টক ক্লোজিং (Day Close)</div>
+            <small className="text-muted" style={{ fontSize: "11px" }}>দিনশেষে ক্যাশ টাকা, বাকি, খরচ ও অবশিষ্ট ইনভেন্টরি মেলান</small>
+          </div>
+        </div>
+        <button className="btn btn-sm btn-warning text-dark fw-bold px-3 py-1 shadow-sm text-nowrap" style={{ fontSize: "12px", borderRadius: "8px" }}>
+          মেলান <i className="bi bi-arrow-right-short"></i>
+        </button>
+      </div>
+
       {/* Title with Period Filter and Shop View Switcher */}
       <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3 no-print">
         <div>
@@ -1002,6 +1022,12 @@ export default function Dashboard() {
             <div className="card-quick-action" onClick={() => navigateTo("/purchases")}>
               <i className="bi bi-receipt text-success"></i>
               <span className="fs-8">Purchases</span>
+            </div>
+          </div>
+          <div className="col-3">
+            <div className="card-quick-action" onClick={() => navigateTo("/day-close")} title="সারাদিনের হিসাব ও স্টক ক্লোজিং">
+              <i className="bi bi-moon-stars-fill text-warning"></i>
+              <span className="fs-8">Day Close</span>
             </div>
           </div>
           <div className="col-3">
