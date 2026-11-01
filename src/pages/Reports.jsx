@@ -1,17 +1,27 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useData } from "../context/DataContext";
+import { useAuth } from "../context/AuthContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
-import { exportToExcel, exportEnhancedReportToExcel } from "../utils/excelGenerator";
+import { exportToExcel, exportEnhancedReportToExcel, exportCombinedReportToExcel } from "../utils/excelGenerator";
 import dayjs from "dayjs";
 import CopyableText from "../components/CopyableText";
 import Chart from "chart.js/auto";
 import TeaReportSection from "../tea/reports/TeaReportSection";
+import * as teaApi from "../tea/context/teaDb";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
 export default function Reports() {
+  const { currentUser, isLocalMode } = useAuth();
   const { sales = [], purchases = [], expenses = [], products = [], loading } = useData();
   const [errorBoundary, setErrorBoundary] = useState(null);
+
+  // Business view selector: 'combined' | 'mudi' | 'tea'
+  const [businessView, setBusinessView] = useState("combined");
+
+  // Tea stall data for combined analytics
+  const [teaOrders, setTeaOrders] = useState([]);
+  const [teaExpenses, setTeaExpenses] = useState([]);
 
   // Date filters: 'today' | 'yesterday' | 'week' | 'month' | 'custom'
   const [filterType, setFilterType] = useState("week");
@@ -20,6 +30,18 @@ export default function Reports() {
 
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
+
+  // Fetch tea stall records
+  useEffect(() => {
+    if (!currentUser) return;
+    teaApi.getTeaOrders(currentUser.uid, isLocalMode)
+      .then(ords => setTeaOrders(ords || []))
+      .catch(e => console.error("Tea orders fetch error:", e));
+
+    teaApi.getTeaExpenses(currentUser.uid, isLocalMode)
+      .then(exps => setTeaExpenses(exps || []))
+      .catch(e => console.error("Tea expenses fetch error:", e));
+  }, [currentUser, isLocalMode]);
 
   // Set date ranges automatically on filterType change
   useEffect(() => {
@@ -54,7 +76,11 @@ export default function Reports() {
   const filteredPurchases = purchases ? purchases.filter(p => isDateInRange(p.date)) : [];
   const filteredExpenses = expenses ? expenses.filter(e => isDateInRange(e.date)) : [];
 
-  // Calculations summaries
+  // Tea filtered data
+  const filteredTeaOrders = teaOrders.filter(o => isDateInRange(o.date || o.createdAt?.slice(0, 10)));
+  const filteredTeaExpenses = teaExpenses.filter(e => isDateInRange(e.date || e.createdAt?.slice(0, 10)));
+
+  // Mudi calculations
   const totalSalesVal = filteredSales.reduce((acc, s) => acc + (s.payableAmount || 0), 0);
   const totalPurchaseVal = filteredPurchases.reduce((acc, p) => acc + (p.totalAmount || 0), 0);
   const totalExpenseVal = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
@@ -79,10 +105,23 @@ export default function Reports() {
   }
   const netProfitVal = grossProfitVal - totalExpenseVal;
 
+  // Tea calculations
+  const totalTeaSales = filteredTeaOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+  const totalTeaExpenses = filteredTeaExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const totalTeaDues = filteredTeaOrders.reduce((sum, o) => sum + (o.due || 0), 0);
+  const netTeaProfit = totalTeaSales - totalTeaExpenses;
+
+  // Active Metrics depending on businessView ('combined' | 'mudi' | 'tea')
+  const activeSales = businessView === "combined" ? totalSalesVal + totalTeaSales : (businessView === "tea" ? totalTeaSales : totalSalesVal);
+  const activePurchases = businessView === "tea" ? 0 : totalPurchaseVal;
+  const activeExpenses = businessView === "combined" ? totalExpenseVal + totalTeaExpenses : (businessView === "tea" ? totalTeaExpenses : totalExpenseVal);
+  const activeNetProfit = businessView === "combined" ? netProfitVal + netTeaProfit : (businessView === "tea" ? netTeaProfit : netProfitVal);
+  const activeDues = businessView === "combined" ? totalDuesVal + totalTeaDues : (businessView === "tea" ? totalTeaDues : totalDuesVal);
+
   // Key Ratios
-  const profitMargin = totalSalesVal > 0 ? ((netProfitVal / totalSalesVal) * 100).toFixed(1) : "0.0";
-  const expenseRatio = totalSalesVal > 0 ? ((totalExpenseVal / totalSalesVal) * 100).toFixed(1) : "0.0";
-  const dueRatio = totalSalesVal > 0 ? ((totalDuesVal / totalSalesVal) * 100).toFixed(1) : "0.0";
+  const profitMargin = activeSales > 0 ? ((activeNetProfit / activeSales) * 100).toFixed(1) : "0.0";
+  const expenseRatio = activeSales > 0 ? ((activeExpenses / activeSales) * 100).toFixed(1) : "0.0";
+  const dueRatio = activeSales > 0 ? ((activeDues / activeSales) * 100).toFixed(1) : "0.0";
 
   // Chart Rendering
   useEffect(() => {
@@ -100,10 +139,10 @@ export default function Reports() {
       chartInstance.current = new Chart(ctx, {
         type: "bar",
         data: {
-          labels: ["Total Sales", "Total Purchase", "Total Expense", "Net Profit"],
+          labels: ["Total Sales", "Purchase", "Expense", "Net Profit"],
           datasets: [
             {
-              data: [totalSalesVal, totalPurchaseVal, totalExpenseVal, netProfitVal],
+              data: [activeSales, activePurchases, activeExpenses, activeNetProfit],
               backgroundColor: ["#059669", "#06b6d4", "#ef4444", "#f59e0b"],
               borderRadius: 8
             }
@@ -137,7 +176,7 @@ export default function Reports() {
         chartInstance.current = null;
       }
     };
-  }, [totalSalesVal, totalPurchaseVal, totalExpenseVal, netProfitVal, loading]);
+  }, [activeSales, activePurchases, activeExpenses, activeNetProfit, loading]);
 
   if (errorBoundary) {
     return (
@@ -166,14 +205,38 @@ export default function Reports() {
 
   // Export functions
   const handleExportExcel = () => {
-    const summary = {
-      totalSales: totalSalesVal,
-      totalPurchases: totalPurchaseVal,
-      totalExpenses: totalExpenseVal,
-      netProfit: netProfitVal,
-      profitMargin: profitMargin
-    };
-    exportEnhancedReportToExcel(summary, filteredSales, startDate, endDate, `ShopKhataPro_Report_${startDate}_to_${endDate}`);
+    const teaMargin = totalTeaSales > 0 ? ((netTeaProfit / totalTeaSales) * 100).toFixed(1) : "0.0";
+
+    if (businessView === "combined" || businessView === "tea") {
+      const mudiSummary = {
+        totalSales: totalSalesVal,
+        totalPurchases: totalPurchaseVal,
+        totalExpenses: totalExpenseVal,
+        netProfit: netProfitVal,
+        totalDues: totalDuesVal,
+        profitMargin: totalSalesVal > 0 ? ((netProfitVal / totalSalesVal) * 100).toFixed(1) : "0.0"
+      };
+      const teaSummary = {
+        totalSales: totalTeaSales,
+        totalExpenses: totalTeaExpenses,
+        netProfit: netTeaProfit,
+        totalDues: totalTeaDues,
+        profitMargin: teaMargin
+      };
+      exportCombinedReportToExcel(
+        mudiSummary, teaSummary, filteredSales, filteredTeaOrders, filteredTeaExpenses,
+        startDate, endDate, `ShopKhataPro_Combined_${startDate}_to_${endDate}`
+      );
+    } else {
+      const summary = {
+        totalSales: totalSalesVal,
+        totalPurchases: totalPurchaseVal,
+        totalExpenses: totalExpenseVal,
+        netProfit: netProfitVal,
+        profitMargin: totalSalesVal > 0 ? ((netProfitVal / totalSalesVal) * 100).toFixed(1) : "0.0"
+      };
+      exportEnhancedReportToExcel(summary, filteredSales, startDate, endDate, `ShopKhataPro_Mudi_${startDate}_to_${endDate}`);
+    }
   };
 
   const handleExportPDF = async () => {
@@ -215,10 +278,38 @@ export default function Reports() {
   try {
     return (
       <div className="main-content">
-        {/* Title */}
+        {/* Title & Business Scope Selector */}
         <div className="mb-4 no-print">
-          <h2 className="h4 mb-1">Reports & Analytics</h2>
-          <p className="text-muted fs-7">ব্যবসায়িক লাভ-ক্ষতি ও বিক্রয় রিপোর্টের বিশ্লেষণ</p>
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <div>
+              <h2 className="h4 mb-1">Reports & Analytics</h2>
+              <p className="text-muted fs-7 mb-0">ব্যবসায়িক লাভ-ক্ষতি ও যৌথ বিক্রয় রিপোর্টের বিশ্লেষণ</p>
+            </div>
+            {/* View Scope Tabs */}
+            <div className="btn-group btn-group-sm" role="group">
+              <button 
+                type="button" 
+                className={`btn ${businessView === "combined" ? "btn-success" : "btn-outline-secondary"}`}
+                onClick={() => setBusinessView("combined")}
+              >
+                🏪 সমন্বিত (মুদি + চা স্টল)
+              </button>
+              <button 
+                type="button" 
+                className={`btn ${businessView === "mudi" ? "btn-success" : "btn-outline-secondary"}`}
+                onClick={() => setBusinessView("mudi")}
+              >
+                🛒 শুধু মুদি
+              </button>
+              <button 
+                type="button" 
+                className={`btn ${businessView === "tea" ? "btn-success" : "btn-outline-secondary"}`}
+                onClick={() => setBusinessView("tea")}
+              >
+                🍵 শুধু চা স্টল
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Date Range selectors */}
@@ -271,33 +362,45 @@ export default function Reports() {
 
         {/* Financial KPI stats grid */}
         <div className="row g-3 mb-4 no-print">
-          <div className="col-6">
+          <div className="col-6 col-md-3">
             <div className="card-custom bg-success text-white p-3 h-100">
               <small className="opacity-75 fs-8 text-uppercase">Sales (বিক্রয়)</small>
-              <h4 className="m-0 fw-bold">{formatCurrency(totalSalesVal)}</h4>
+              <h4 className="m-0 fw-bold">{formatCurrency(activeSales)}</h4>
+              {businessView === "combined" && (
+                <div className="fs-9 opacity-75 mt-1">মুদি: {formatCurrency(totalSalesVal)} | চা: {formatCurrency(totalTeaSales)}</div>
+              )}
             </div>
           </div>
 
-          <div className="col-6">
+          <div className="col-6 col-md-3">
             <div className="card-custom bg-info text-white p-3 h-100">
               <small className="opacity-75 fs-8 text-uppercase">Purchases (ক্রয়)</small>
-              <h4 className="m-0 fw-bold">{formatCurrency(totalPurchaseVal)}</h4>
+              <h4 className="m-0 fw-bold">{formatCurrency(activePurchases)}</h4>
+              {businessView === "combined" && (
+                <div className="fs-9 opacity-75 mt-1">মুদি ইনভেন্টরি পারচেজ</div>
+              )}
             </div>
           </div>
 
-          <div className="col-6">
+          <div className="col-6 col-md-3">
             <div className="card-custom bg-danger text-white p-3 h-100">
               <small className="opacity-75 fs-8 text-uppercase">Expenses (খরচ)</small>
-              <h4 className="m-0 fw-bold">{formatCurrency(totalExpenseVal)}</h4>
+              <h4 className="m-0 fw-bold">{formatCurrency(activeExpenses)}</h4>
+              {businessView === "combined" && (
+                <div className="fs-9 opacity-75 mt-1">দোকান: {formatCurrency(totalExpenseVal)} | চা/দুধ/গ্যাস: {formatCurrency(totalTeaExpenses)}</div>
+              )}
             </div>
           </div>
 
-          <div className="col-6">
+          <div className="col-6 col-md-3">
             <div className="card-custom bg-warning text-dark p-3 h-100">
               <small className="opacity-75 fs-8 text-uppercase">Net Profit (লাভ)</small>
-              <h4 className={`m-0 fw-bold ${netProfitVal >= 0 ? "text-success-emphasis" : "text-danger-emphasis"}`}>
-                {formatCurrency(netProfitVal)}
+              <h4 className={`m-0 fw-bold ${activeNetProfit >= 0 ? "text-success-emphasis" : "text-danger-emphasis"}`}>
+                {formatCurrency(activeNetProfit)}
               </h4>
+              {businessView === "combined" && (
+                <div className="fs-9 opacity-75 mt-1">মুদি: {formatCurrency(netProfitVal)} | চা: {formatCurrency(netTeaProfit)}</div>
+              )}
             </div>
           </div>
         </div>
@@ -305,37 +408,42 @@ export default function Reports() {
         {/* Dynamic Financial Advisory Briefing */}
         <div className="card-custom bg-white border border-success-subtle p-3 mb-4 no-print">
           <h4 className="h6 text-success text-uppercase mb-3 font-monospace d-flex align-items-center gap-1">
-            <i className="bi bi-lightbulb-fill"></i> Financial Advisory (ব্যবসায়িক পরামর্শ)
+            <i className="bi bi-lightbulb-fill"></i> Financial Advisory ({businessView === "combined" ? "যৌথ পরামর্শ" : businessView === "tea" ? "চা স্টল পরামর্শ" : "মুদি পরামর্শ"})
           </h4>
           <div className="fs-7 text-dark" style={{ lineHeight: "1.6" }}>
-            {totalSalesVal === 0 ? (
+            {activeSales === 0 ? (
               <p className="text-muted m-0">এই সময়ে কোনো বিক্রয় সংঘটিত হয়নি। পরামর্শ পেতে নতুন পণ্য বিক্রয় নথিভুক্ত করুন।</p>
             ) : (
               <div>
                 <p className="mb-2">
-                  ১. এই সময়ে আপনার দোকানে মোট বিক্রয় হয়েছে <strong>{formatCurrency(totalSalesVal)}</strong> এবং দোকান পরিচালন ও ক্রয়ের যাবতীয় খরচ বাদ দিয়ে আপনার আসল মুনাফা বা নিট লাভ হয়েছে <strong>{formatCurrency(netProfitVal)}</strong>।
+                  ১. এই সময়ে আপনার মোট বিক্রয় হয়েছে <strong>{formatCurrency(activeSales)}</strong> এবং যাবতীয় খরচ বাদ দিয়ে আসল নিট লাভ হয়েছে <strong>{formatCurrency(activeNetProfit)}</strong>।
+                  {businessView === "combined" && (
+                    <span className="text-muted d-block fs-8 mt-1">
+                      (যার মধ্যে মুদি বিক্রয় {formatCurrency(totalSalesVal)} ও লাভ {formatCurrency(netProfitVal)}, এবং চা স্টল বিক্রয় {formatCurrency(totalTeaSales)} ও লাভ {formatCurrency(netTeaProfit)})
+                    </span>
+                  )}
                 </p>
                 <p className="mb-2">
-                  ২. বিক্রয়ের বিপরীতে আপনার নিট লাভের হার <strong>{profitMargin}%</strong>। {
-                    netProfitVal < 0 
-                      ? "⚠️ আপনার ব্যবসা বর্তমানে লোকসানে রয়েছে। পণ্য বিক্রয়মূল্য পুনর্নির্ধারণ করা অথবা পরিচালনা খরচ কমানো প্রয়োজন।" 
+                  ২. বিক্রয়ের বিপরীতে নিট লাভের হার <strong>{profitMargin}%</strong>। {
+                    activeNetProfit < 0 
+                      ? "⚠️ আপনার ব্যবসা বর্তমানে লোকসানে রয়েছে। বিক্রয়মূল্য পুনর্নির্ধারণ করা অথবা পরিচালনা খরচ কমানো প্রয়োজন।" 
                       : Number(profitMargin) >= 20 
-                        ? "🎉 এটি একটি খুচরা দোকানের জন্য অত্যন্ত ভালো মুনাফার হার! এই ধারা বজায় রাখুন।" 
-                        : "💼 এটি একটি স্বাভাবিক মুনাফার হার। লাভ আরেকটু বাড়াতে ক্রয়ের ব্যয় ও দোকান খরচ নিয়ন্ত্রণে জোর দিন।"
+                        ? "🎉 এটি একটি খুচরা ব্যবসার জন্য অত্যন্ত ভালো মুনাফার হার! এই ধারা বজায় রাখুন।" 
+                        : "💼 এটি একটি স্বাভাবিক মুনাফার হার। লাভ বাড়াতে ব্যয় নিয়ন্ত্রণে জোর দিন।"
                   }
                 </p>
                 <p className="mb-2">
                   ৩. আপনার পরিচালন খরচের হার <strong>{expenseRatio}%</strong>। {
                     Number(expenseRatio) >= 15 
-                      ? "⚠️ আপনার বিক্রয়ের তুলনায় দোকানের পরিচালনা খরচ কিছুটা বেশি। অযথা দোকান খরচ নিয়ন্ত্রণে মনোযোগী হোন।" 
+                      ? "⚠️ বিক্রয়ের তুলনায় পরিচালনা খরচ কিছুটা বেশি। খরচ নিয়ন্ত্রণে মনোযোগী হোন।" 
                       : "✅ আপনার পরিচালনা খরচ নিয়ন্ত্রণে রয়েছে।"
                   }
                 </p>
                 <p className="mb-0">
-                  ৪. মোট বিক্রয়ের মধ্যে <strong>{dueRatio}%</strong> টাকা বাজারে বকেয়া আটকে আছে (বকেয়া পরিমাণ: <strong>{formatCurrency(totalDuesVal)}</strong>)। {
+                  ৪. মোট বিক্রয়ের মধ্যে <strong>{dueRatio}%</strong> টাকা বাজারে বকেয়া আটকে আছে (বকেয়া পরিমাণ: <strong>{formatCurrency(activeDues)}</strong>)। {
                     Number(dueRatio) >= 15 
-                      ? "⚠️ আপনার বাজারে বকেয়া বিক্রয়ের হার অনেক বেশি। দ্রুত কাস্টমারদের থেকে বকেয়া আদায় করার চেষ্টা করুন, তা না হলে ক্যাশ সংকটের ঝুঁকি তৈরি হতে পারে।" 
-                      : "✅ বকেয়া বিক্রয়ের হার সীমার মধ্যে রয়েছে। ক্যাশ প্রবাহ ভালো রয়েছে।"
+                      ? "⚠️ আপনার বাকি বা খাতার বকেয়া বিক্রয়ের হার বেশি। দ্রুত বকেয়া আদায়ের চেষ্টা করুন।" 
+                      : "✅ বকেয়া বিক্রয়ের হার স্বাভাবিক সীমার মধ্যে রয়েছে।"
                   }
                 </p>
               </div>
@@ -352,27 +460,31 @@ export default function Reports() {
         </div>
 
         {/* Integrated Tea & Cigarette Stall Report Section */}
-        <TeaReportSection startDate={startDate} endDate={endDate} />
+        {businessView !== "mudi" && (
+          <TeaReportSection startDate={startDate} endDate={endDate} />
+        )}
 
         {/* Export operations */}
         <div className="card-custom bg-white border border-light p-3 mb-4 no-print">
-          <h4 className="h6 text-muted text-uppercase mb-3 font-monospace">Export Report</h4>
+          <h4 className="h6 text-muted text-uppercase mb-3 font-monospace">
+            Export Report {businessView === "combined" ? "(সমন্বিত)" : businessView === "tea" ? "(চা স্টল)" : "(মুদি)"}
+          </h4>
           <div className="d-flex gap-2">
             <button 
               type="button" 
               className="btn btn-custom btn-custom-primary flex-grow-1 font-monospace"
               onClick={handleExportPDF}
-              disabled={filteredSales.length === 0}
+              disabled={filteredSales.length === 0 && filteredTeaOrders.length === 0}
             >
-              <i className="bi bi-file-earmark-pdf"></i> Export PDF (Bangla)
+              <i className="bi bi-file-earmark-pdf"></i> {businessView === "combined" ? "Combined PDF" : "Export PDF"}
             </button>
             <button 
               type="button" 
               className="btn btn-custom btn-custom-secondary flex-grow-1 font-monospace"
               onClick={handleExportExcel}
-              disabled={filteredSales.length === 0}
+              disabled={filteredSales.length === 0 && filteredTeaOrders.length === 0}
             >
-              <i className="bi bi-file-earmark-spreadsheet"></i> Export Excel
+              <i className="bi bi-file-earmark-spreadsheet"></i> {businessView === "combined" ? "Combined Excel" : "Export Excel"}
             </button>
           </div>
         </div>
@@ -437,55 +549,103 @@ export default function Reports() {
         >
           <div style={{ borderBottom: "3px solid #059669", paddingBottom: "12px", marginBottom: "25px" }}>
             <h2 style={{ color: "#059669", margin: "0 0 5px 0", fontSize: "28px", fontFamily: "inherit" }}>SHOP KHATA PRO</h2>
-            <p style={{ margin: 0, fontSize: "13px", color: "#475569" }}>ব্যবসার কার্যক্ষমতা, লাভ-ক্ষতি ও পরামর্শ বিশ্লেষণ বিবরণী</p>
-            <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#334155", fontWeight: "bold" }}>রিপোর্ট সময়কাল: {startDate} থেকে {endDate}</p>
+            <p style={{ margin: 0, fontSize: "13px", color: "#475569" }}>মুদি দোকান ও চা স্টল — সমন্বিত আর্থিক প্রতিবেদন</p>
+            <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#334155", fontWeight: "bold" }}>রিপোর্ট সময়কাল: {startDate} থেকে {endDate}</p>
           </div>
 
-          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>১. আর্থিক ফলাফল সারসংক্ষেপ (Financial Summary)</h4>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "30px", fontSize: "13px" }}>
+          {/* Section 1: Combined Financial Comparison Table */}
+          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>১. সমন্বিত আর্থিক সারসংক্ষেপ (Combined Financial Summary)</h4>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "25px", fontSize: "12px" }}>
+            <thead>
+              <tr style={{ background: "#f1f5f9" }}>
+                <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "left" }}>বিবরণ</th>
+                <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right" }}>মুদি দোকান (৳)</th>
+                <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right" }}>চা ও সিগারেট স্টল (৳)</th>
+                <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right", fontWeight: "bold" }}>সর্বমোট (৳)</th>
+              </tr>
+            </thead>
             <tbody>
               <tr style={{ background: "#f8fafc" }}>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0" }}>মোট বিক্রয় পরিমাণ (Total Sales Collected)</td>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0", fontWeight: "bold", textAlign: "right" }}>{formatCurrency(totalSalesVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>মোট বিক্রয় (Total Sales)</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalSalesVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalTeaSales)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold" }}>{formatCurrency(totalSalesVal + totalTeaSales)}</td>
               </tr>
               <tr>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0" }}>মোট পণ্য ক্রয় খরচ (Total Purchases)</td>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0", fontWeight: "bold", textAlign: "right" }}>{formatCurrency(totalPurchaseVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>পণ্য ক্রয় (Purchases)</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalPurchaseVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", color: "#94a3b8" }}>—</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold" }}>{formatCurrency(totalPurchaseVal)}</td>
               </tr>
               <tr style={{ background: "#f8fafc" }}>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0" }}>অন্যান্য দোকান পরিচালন খরচ (Total Expenses)</td>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0", fontWeight: "bold", textAlign: "right" }}>{formatCurrency(totalExpenseVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>পরিচালন খরচ (Expenses)</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalExpenseVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalTeaExpenses)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold" }}>{formatCurrency(totalExpenseVal + totalTeaExpenses)}</td>
               </tr>
-              <tr style={{ background: "#f0fdf4", color: "#166534" }}>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0", fontWeight: "bold" }}>ব্যবসায়িক নিট লাভ (Net Profit)</td>
-                <td style={{ padding: "10px", border: "1px solid #e2e8f0", fontWeight: "bold", textAlign: "right" }}>{formatCurrency(netProfitVal)}</td>
+              <tr style={{ background: "#f0fdf4" }}>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", fontWeight: "bold", color: "#166534" }}>নিট লাভ (Net Profit)</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold" }}>{formatCurrency(netProfitVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold" }}>{formatCurrency(netTeaProfit)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold", color: "#166534" }}>{formatCurrency(netProfitVal + netTeaProfit)}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>বকেয়া/বাকি (Dues)</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalDuesVal)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatCurrency(totalTeaDues)}</td>
+                <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: "bold" }}>{formatCurrency(totalDuesVal + totalTeaDues)}</td>
               </tr>
             </tbody>
           </table>
 
-          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>২. ব্যবসায়িক পরামর্শ ও অনুপাত বিশ্লেষণ (Advisor Briefing)</h4>
-          <div style={{ background: "#f8fafc", borderLeft: "4px solid #059669", padding: "15px", marginBottom: "30px", fontSize: "13px", lineHeight: "1.7" }}>
-            <div style={{ marginBottom: "8px" }}>• নির্বাচিত সময়ে আপনার মোট বিক্রয় <strong>{formatCurrency(totalSalesVal)}</strong> এবং দোকান পরিচালন ও ক্রয়ের যাবতীয় খরচ বাদ দিয়ে নিট প্রফিট হয়েছে <strong>{formatCurrency(netProfitVal)}</strong>।</div>
-            <div style={{ marginBottom: "8px" }}>• বিক্রয়ের বিপরীতে নিট লাভের হার <strong>{profitMargin}%</strong>। {
-              netProfitVal < 0 
-                ? "সতর্কতা: আপনার ব্যবসা লোকসানে চলছে! খরচের পরিমাণ বিক্রয় লভ্যাংশকে ছাড়িয়ে গেছে।" 
+          {/* Section 2: Combined Advisory */}
+          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>২. সমন্বিত ব্যবসায়িক পরামর্শ (Combined Advisory)</h4>
+          <div style={{ background: "#f8fafc", borderLeft: "4px solid #059669", padding: "15px", marginBottom: "25px", fontSize: "12px", lineHeight: "1.7" }}>
+            <div style={{ marginBottom: "8px" }}>• সর্বমোট বিক্রয় <strong>{formatCurrency(totalSalesVal + totalTeaSales)}</strong> (মুদি: {formatCurrency(totalSalesVal)}, চা স্টল: {formatCurrency(totalTeaSales)})। সকল খরচ বাদে যৌথ নিট মুনাফা <strong>{formatCurrency(netProfitVal + netTeaProfit)}</strong>।</div>
+            <div style={{ marginBottom: "8px" }}>• যৌথ লাভের হার <strong>{profitMargin}%</strong>। {
+              activeNetProfit < 0 
+                ? "সতর্কতা: আপনার ব্যবসা লোকসানে চলছে!" 
                 : Number(profitMargin) >= 20 
-                  ? "এটি একটি খুচরা দোকানের জন্য অত্যন্ত ভালো মুনাফার হার! এই ধারা বজায় রাখুন।" 
-                  : "যা স্বাভাবিক সীমার মধ্যে আছে। মুনাফা বাড়াতে দোকান পরিচালনা ব্যয় নিয়ন্ত্রণ করতে পারেন।"
+                  ? "এটি অত্যন্ত ভালো মুনাফার হার!" 
+                  : "স্বাভাবিক মুনাফার হার। খরচ নিয়ন্ত্রণে মনোযোগী হোন।"
             }</div>
-            <div style={{ marginBottom: "8px" }}>• দোকান খরচ অনুপাত <strong>{expenseRatio}%</strong>। {
-              Number(expenseRatio) >= 15 
-                ? "খরচ বিক্রয়ের তুলনায় বেশি হচ্ছে, তাই পরিচালনা খরচ কমানোর পরামর্শ দেওয়া যাচ্ছে।" 
-                : "পরিচালনা খরচ নিয়ন্ত্রণে রয়েছে।"
-            }</div>
-            <div>• বকেয়া বিক্রয়ের হার <strong>{dueRatio}%</strong> (মোট বকেয়া: <strong>{formatCurrency(totalDuesVal)}</strong>)। {
-              Number(dueRatio) >= 15 
-                ? "বাজারে বকেয়া বিক্রয়ের হার অনেক বেশি। দ্রুত বকেয়া আদায়ের তাগিদ দিন, নতুবা ক্যাশ সংকটের ঝুঁকি তৈরি হতে পারে।" 
-                : "বকেয়া সীমার মধ্যে রয়েছে।"
-            }</div>
+            <div>• মোট বকেয়া <strong>{formatCurrency(totalDuesVal + totalTeaDues)}</strong> (মুদি: {formatCurrency(totalDuesVal)}, চা: {formatCurrency(totalTeaDues)})।</div>
           </div>
 
-          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>৩. বিক্রয় বিবরণী তালিকা (Invoices Registry)</h4>
+          {/* Section 3: Tea Stall Orders */}
+          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>৩. চা ও সিগারেট স্টল অর্ডার ({filteredTeaOrders.length} টি)</h4>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "25px", fontSize: "11px" }}>
+            <thead>
+              <tr style={{ background: "#f1f5f9" }}>
+                <th style={{ padding: "7px", border: "1px solid #cbd5e1", textAlign: "left" }}>তারিখ</th>
+                <th style={{ padding: "7px", border: "1px solid #cbd5e1", textAlign: "left" }}>আইটেম</th>
+                <th style={{ padding: "7px", border: "1px solid #cbd5e1", textAlign: "right" }}>মোট (৳)</th>
+                <th style={{ padding: "7px", border: "1px solid #cbd5e1", textAlign: "right" }}>নগদ (৳)</th>
+                <th style={{ padding: "7px", border: "1px solid #cbd5e1", textAlign: "right" }}>বাকি (৳)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTeaOrders.slice(0, 20).map((o, idx) => (
+                <tr key={o.id || idx} style={idx % 2 === 0 ? { background: "#f8fafc" } : {}}>
+                  <td style={{ padding: "6px", border: "1px solid #e2e8f0" }}>{o.date || o.createdAt?.slice(0, 10)}</td>
+                  <td style={{ padding: "6px", border: "1px solid #e2e8f0" }}>{o.items?.map(i => `${i.name} x${i.qty || 1}`).join(", ") || "—"}</td>
+                  <td style={{ padding: "6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{o.total || 0}</td>
+                  <td style={{ padding: "6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{o.paid || 0}</td>
+                  <td style={{ padding: "6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{o.due || 0}</td>
+                </tr>
+              ))}
+              {filteredTeaOrders.length > 20 && (
+                <tr>
+                  <td colSpan="5" style={{ padding: "6px", border: "1px solid #e2e8f0", textAlign: "center", fontStyle: "italic", color: "#64748b" }}>
+                    ...এবং আরও {filteredTeaOrders.length - 20} টি অর্ডার সংক্ষেপিত।
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Section 4: Mudi Invoices */}
+          <h4 style={{ margin: "0 0 10px 0", color: "#0f172a", fontSize: "16px", borderBottom: "1px solid #cbd5e1", paddingBottom: "6px" }}>৪. মুদি দোকান বিক্রয় বিবরণী ({filteredSales.length} টি ইনভয়েস)</h4>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", textAlign: "left" }}>
             <thead>
               <tr style={{ background: "#f1f5f9" }}>
@@ -494,7 +654,7 @@ export default function Reports() {
                 <th style={{ padding: "8px", border: "1px solid #cbd5e1" }}>কাস্টমার</th>
                 <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right" }}>মোট মূল্য (৳)</th>
                 <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right" }}>পরিশোধ (৳)</th>
-                <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right" }}>বকেয়া (৳)</th>
+                <th style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "right" }}>বকেয়া (৳)</th>
               </tr>
             </thead>
             <tbody>
@@ -513,7 +673,7 @@ export default function Reports() {
               {filteredSales.length > 25 && (
                 <tr>
                   <td colSpan="6" style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "center", fontStyle: "italic", color: "#64748b" }}>
-                    ...এবং আরও {filteredSales.length - 25} টি বিক্রয় রসিদ সংক্ষেপিত করা হয়েছে।
+                    ...এবং আরও {filteredSales.length - 25} টি বিক্রয় রসিদ সংক্ষেপিত করা হয়েছে।
                   </td>
                 </tr>
               )}
@@ -521,7 +681,7 @@ export default function Reports() {
           </table>
           
           <div style={{ marginTop: "40px", borderTop: "1px solid #cbd5e1", paddingTop: "15px", textAlign: "center", fontSize: "11px", color: "#64748b" }}>
-            রিপোর্টটি <strong>Shop Khata Pro</strong> দ্বারা সুরক্ষিতভাবে প্রস্তুতকৃত। জেনারেট হওয়ার তারিখ: {new Date().toLocaleString()}
+            রিপোর্টটি <strong>Shop Khata Pro</strong> দ্বারা সুরক্ষিতভাবে প্রস্তুতকৃত। জেনারেট হওয়ার তারিখ: {new Date().toLocaleString()}
           </div>
         </div>
       </div>
