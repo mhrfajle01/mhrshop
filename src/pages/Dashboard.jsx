@@ -340,24 +340,49 @@ export default function Dashboard() {
         onNavigateToTea={() => navigateTo("/tea-stall")}
       />
 
-      {/* Day Close / Night Hisab Callout Card */}
-      <div 
-        className="card-custom bg-white border border-warning-subtle shadow-sm p-3 mb-3 d-flex align-items-center justify-content-between cursor-pointer"
-        onClick={() => navigateTo("/day-close")}
-        style={{ cursor: "pointer", background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)" }}
-      >
-        <div className="d-flex align-items-center gap-3">
-          <div className="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: "42px", height: "42px", minWidth: "42px" }}>
-            <i className="bi bi-moon-stars-fill fs-5"></i>
-          </div>
-          <div>
-            <div className="fw-bold text-dark fs-7">রাতের হিসাব ও স্টক ক্লোজিং (Day Close)</div>
-            <small className="text-muted" style={{ fontSize: "11px" }}>দিনশেষে ক্যাশ টাকা, বাকি, খরচ ও অবশিষ্ট ইনভেন্টরি মেলান</small>
+      {/* Day Close / Night Hisab & Capital Callout Cards */}
+      <div className="row g-2 mb-3">
+        <div className="col-12 col-md-6">
+          <div 
+            className="card-custom bg-white border border-warning-subtle shadow-sm p-3 h-100 d-flex align-items-center justify-content-between cursor-pointer"
+            onClick={() => navigateTo("/day-close")}
+            style={{ cursor: "pointer", background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)" }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <div className="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center" style={{ width: "40px", height: "40px", minWidth: "40px" }}>
+                <i className="bi bi-moon-stars-fill fs-5"></i>
+              </div>
+              <div>
+                <div className="fw-bold text-dark fs-7">রাতের হিসাব ও স্টক ক্লোজিং</div>
+                <small className="text-muted" style={{ fontSize: "11px" }}>ক্যাশ টাকা, বাকি ও অবিক্রিত মাল মেলান</small>
+              </div>
+            </div>
+            <button className="btn btn-sm btn-warning text-dark fw-bold px-2 py-1 shadow-sm text-nowrap" style={{ fontSize: "12px", borderRadius: "8px" }}>
+              মেলান <i className="bi bi-arrow-right-short"></i>
+            </button>
           </div>
         </div>
-        <button className="btn btn-sm btn-warning text-dark fw-bold px-3 py-1 shadow-sm text-nowrap" style={{ fontSize: "12px", borderRadius: "8px" }}>
-          মেলান <i className="bi bi-arrow-right-short"></i>
-        </button>
+
+        <div className="col-12 col-md-6">
+          <div 
+            className="card-custom bg-white border border-success-subtle shadow-sm p-3 h-100 d-flex align-items-center justify-content-between cursor-pointer"
+            onClick={() => navigateTo("/capital-assets")}
+            style={{ cursor: "pointer", background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)" }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <div className="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style={{ width: "40px", height: "40px", minWidth: "40px" }}>
+                <i className="bi bi-bank2 fs-5"></i>
+              </div>
+              <div>
+                <div className="fw-bold text-dark fs-7">মূলধন, আসবাবপত্র ও মালামাল</div>
+                <small className="text-muted" style={{ fontSize: "11px" }}>দোকানের পুঁজি ও ব্যালেন্স শিট দেখুন</small>
+              </div>
+            </div>
+            <button className="btn btn-sm btn-success text-white fw-bold px-2 py-1 shadow-sm text-nowrap" style={{ fontSize: "12px", borderRadius: "8px" }}>
+              দেখুন <i className="bi bi-arrow-right-short"></i>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Title with Period Filter and Shop View Switcher */}

@@ -101,6 +101,14 @@ export default function Navbar() {
             <li>
               <button 
                 className="dropdown-item py-2 d-flex align-items-center gap-2 text-dark" 
+                onClick={() => handleNavigate("/capital-assets")}
+              >
+                <i className="bi bi-bank2 text-success"></i> মূলধন ও সম্পদ হিসাব
+              </button>
+            </li>
+            <li>
+              <button 
+                className="dropdown-item py-2 d-flex align-items-center gap-2 text-dark" 
                 onClick={() => handleNavigate("/day-close")}
               >
                 <i className="bi bi-moon-stars text-warning"></i> রাতের হিসাব (Day Close)

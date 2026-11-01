@@ -405,6 +405,44 @@ export default function Reports() {
           </div>
         </div>
 
+        {/* Capital & Assets Balance Summary */}
+        {(() => {
+          try {
+            const uid = currentUser?.uid || "guest";
+            const caps = JSON.parse(localStorage.getItem(`mhr_capital_${uid}`) || "[]");
+            const assets = JSON.parse(localStorage.getItem(`mhr_assets_${uid}`) || "[]");
+            const netCap = caps.reduce((s, c) => s + (c.type === "deposit" ? Number(c.amount || 0) : -Number(c.amount || 0)), 0);
+            const totalAss = assets.reduce((s, a) => s + Number(a.cost || 0), 0);
+            const totalStk = (products || []).reduce((s, p) => s + (Number(p.stock || p.stockQuantity || 0) * Number(p.buyingPrice || p.purchasePrice || p.costPrice || 0)), 0);
+            return (
+              <div className="card-custom bg-white border border-info-subtle p-3 mb-4 no-print shadow-sm">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <h6 className="m-0 fw-bold text-info-emphasis d-flex align-items-center gap-2">
+                    <i className="bi bi-bank2"></i> মূলধন ও মোট ব্যবসায়িক সম্পদ (Balance Overview)
+                  </h6>
+                  <span className="badge bg-info text-white">পুঁজি ও সম্পদ</span>
+                </div>
+                <div className="row g-2 text-center">
+                  <div className="col-4 border-end">
+                    <small className="text-muted d-block fs-8">বর্তমান মূলধন (Capital)</small>
+                    <span className="fw-bold text-primary fs-6">{formatCurrency(netCap)}</span>
+                  </div>
+                  <div className="col-4 border-end">
+                    <small className="text-muted d-block fs-8">আসবাবপত্র/সরঞ্জাম</small>
+                    <span className="fw-bold text-dark fs-6">{formatCurrency(totalAss)}</span>
+                  </div>
+                  <div className="col-4">
+                    <small className="text-muted d-block fs-8">দোকানে থাকা স্টক</small>
+                    <span className="fw-bold text-success fs-6">{formatCurrency(totalStk)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          } catch {
+            return null;
+          }
+        })()}
+
         {/* Dynamic Financial Advisory Briefing */}
         <div className="card-custom bg-white border border-success-subtle p-3 mb-4 no-print">
           <h4 className="h6 text-success text-uppercase mb-3 font-monospace d-flex align-items-center gap-1">

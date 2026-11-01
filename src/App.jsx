@@ -27,6 +27,7 @@ import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import DayClose from "./pages/DayClose";
 import Trash from "./pages/Trash";
+import CapitalAssets from "./pages/CapitalAssets";
 import TeaStall from "./tea/TeaStall";
 
 function AppContent() {
@@ -70,6 +71,8 @@ function AppContent() {
         return <Settings />;
       case "day-close":
         return <DayClose />;
+      case "capital-assets":
+        return <CapitalAssets />;
       case "tea-stall":
         return <TeaStall />;
       case "trash":

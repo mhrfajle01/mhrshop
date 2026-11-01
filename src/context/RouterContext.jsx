@@ -49,6 +49,7 @@ export function RouterProvider({ children }) {
     else if (pathPart.startsWith("/reports")) view = "reports";
     else if (pathPart.startsWith("/settings")) view = "settings";
     else if (pathPart.startsWith("/day-close")) view = "day-close";
+    else if (pathPart.startsWith("/capital-assets")) view = "capital-assets";
     else if (pathPart.startsWith("/tea-stall")) view = "tea-stall";
     else if (pathPart.startsWith("/trash")) view = "trash";
     

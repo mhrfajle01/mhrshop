@@ -6,7 +6,7 @@ import { DEFAULT_TEA_MENU } from "../tea/menu/TeaMenuPresets";
 import { formatCurrency, getBdToday } from "../utils/formatters";
 
 export default function DayClose() {
-  const { products, sales, expenses, teaOrders = [], teaExpenses = [], addSale, addExpense, updateProduct } = useData();
+  const { products, sales, purchases = [], expenses, khata = [], teaOrders = [], teaExpenses = [], addSale, addExpense, updateProduct } = useData();
   const { currentUser, isLocalMode } = useAuth();
 
   const [activeTab, setActiveTab] = useState("cash"); // 'cash' | 'quick-items' | 'inventory'
@@ -16,9 +16,8 @@ export default function DayClose() {
   const [teaCounts, setTeaCounts] = useState({});
   const [mudiCounts, setMudiCounts] = useState({});
 
-  // Cash reconciliation inputs
+  // Cash reconciliation inputs (Physical Hand Cash focused)
   const [cashInHand, setCashInHand] = useState("");
-  const [digitalPaid, setDigitalPaid] = useState("");
   const [todayDue, setTodayDue] = useState("");
   const [todayExpense, setTodayExpense] = useState("");
   const [expenseTitle, setExpenseTitle] = useState("রাত শেষের দোকান খরচ");
@@ -52,11 +51,17 @@ export default function DayClose() {
   // Recorded stats from both Mudi and Tea today
   const mudiSalesToday = sales.filter(s => (s.date || s.createdAt?.slice(0, 10)) === todayStr && !s.deleted);
   const mudiSalesTotal = mudiSalesToday.reduce((sum, s) => sum + Number(s.totalAmount || s.total || s.payableAmount || 0), 0);
-  
+  const mudiSalesCash = mudiSalesToday.reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+  const mudiSalesDue = mudiSalesToday.reduce((sum, s) => sum + Number(s.dueAmount || 0), 0);
+
   const teaSalesToday = teaOrders.filter(t => (t.date || t.createdAt?.slice(0, 10)) === todayStr && !t.deleted);
   const teaSalesTotal = teaSalesToday.reduce((sum, t) => sum + Number(t.total || 0), 0);
+  const teaSalesCash = teaSalesToday.reduce((sum, t) => sum + Number(t.paid || 0), 0);
+  const teaSalesDue = teaSalesToday.reduce((sum, t) => sum + Number(t.due || 0), 0);
 
   const totalSystemSalesRecorded = mudiSalesTotal + teaSalesTotal;
+  const totalSystemCashSales = mudiSalesCash + teaSalesCash;
+  const totalSystemDueRecorded = mudiSalesDue + teaSalesDue;
 
   const mudiExpensesToday = expenses.filter(e => (e.date || e.createdAt?.slice(0, 10)) === todayStr && !e.deleted);
   const mudiExpensesTotal = mudiExpensesToday.reduce((sum, e) => sum + Number(e.amount || 0), 0);
@@ -66,6 +71,19 @@ export default function DayClose() {
 
   const totalSystemExpensesRecorded = mudiExpensesTotal + teaExpensesTotal;
 
+  // Purchases paid in cash today
+  const purchasesToday = (purchases || []).filter(p => (p.date || p.createdAt?.slice(0, 10)) === todayStr && !p.deleted);
+  const purchasesCashToday = purchasesToday.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
+
+  // Khata dues collected / supplier paid today
+  const khataCustCollected = (khata || [])
+    .filter(k => (k.date || k.createdAt?.slice(0, 10)) === todayStr && !k.deleted && k.partyType === "customer" && k.type === "payment")
+    .reduce((sum, k) => sum + Number(k.amount || 0), 0);
+
+  const khataSuppPaid = (khata || [])
+    .filter(k => (k.date || k.createdAt?.slice(0, 10)) === todayStr && !k.deleted && k.partyType === "supplier" && k.type === "payment")
+    .reduce((sum, k) => sum + Number(k.amount || 0), 0);
+
   // Denomination notes calculator
   const handleNoteChange = (denom, qty) => {
     const updated = { ...notes, [denom]: qty };
@@ -74,27 +92,34 @@ export default function DayClose() {
     if (sum > 0) setCashInHand(sum.toString());
   };
 
-  // Reconciled cash calculation:
-  // Reconciled Sales = Cash In Hand + Digital + Due Given + Expenses - Opening Cash
+  // Accurate Day Close Reconciliation Logic (Hand Cash Only):
   const valCash = parseFloat(cashInHand) || 0;
-  const valDigital = parseFloat(digitalPaid) || 0;
   const valDue = parseFloat(todayDue) || 0;
   const valExp = parseFloat(todayExpense) || 0;
   const valOpening = parseFloat(openingCash) || 0;
 
-  const totalCalculatedDaySales = Math.max(0, valCash + valDigital + valDue + valExp - valOpening);
-  const discrepancy = (valCash > 0 || valDigital > 0) ? (totalCalculatedDaySales - totalSystemSalesRecorded) : 0;
+  // ১. ড্রয়ারে প্রত্যাশিত নগদ টাকা:
+  // সকালের প্রারম্ভিক ক্যাশ + সারাদিনের নগদ বিক্রি + কাস্টমারের পুরোনো বাকি আদায় - নগদ মালামাল ক্রয় - মহাজনকে দেনা পরিশোধ - সারাদিনের দোকান খরচ
+  const expectedCashInDrawer = valOpening + totalSystemCashSales + khataCustCollected - (purchasesCashToday + khataSuppPaid + (valExp || totalSystemExpensesRecorded));
+
+  // ২. ড্রয়ার ক্যাশের গরমিল (উদ্বৃত্ত বা ঘাটতি):
+  const cashDiscrepancy = (valCash > 0) ? (valCash - expectedCashInDrawer) : 0;
+
+  // ৩. সারাদিনের মোট বিক্রি (নগদ বিক্রি + ডিজিটাল বিক্রি + বাকি বিক্রি):
+  // নোট: দোকান খরচ বা মহাজন পরিশোধ হলো ক্যাশ ড্রয়ার থেকে দেওয়া ব্যয় (Outflow), এটা কখনো বিক্রয় (Sales) নয়।
+  const todayActualSalesTotal = totalSystemSalesRecorded + Math.max(0, cashDiscrepancy);
+  const salesDiscrepancy = Math.max(0, cashDiscrepancy);
 
   // 1. Unified Cash Day Close Save
   const handleSaveCashClose = async () => {
     try {
-      if (valCash === 0 && valDigital === 0 && valDue === 0) {
-        alert("অনুগ্রহ করে নগদ ক্যাশ বা ডিজিটাল টাকার পরিমাণ দিন!");
+      if (valCash === 0 && valDue === 0) {
+        alert("অনুগ্রহ করে নগদ ড্রয়ার ক্যাশের পরিমাণ দিন!");
         return;
       }
 
-      // If discrepancy exists, record missing sales entry
-      if (discrepancy > 0) {
+      // If sales discrepancy exists, record missing sales entry
+      if (salesDiscrepancy > 0) {
         await addSale({
           invoiceNo: `DC-${Date.now().toString().slice(-6)}`,
           date: todayStr,
@@ -102,15 +127,15 @@ export default function DayClose() {
           items: [{
             productId: "general_close",
             name: "অনিবন্ধিত মোট বিক্রি (মুদি ও চা)",
-            price: discrepancy,
+            price: salesDiscrepancy,
             quantity: 1,
-            total: discrepancy
+            total: salesDiscrepancy
           }],
-          subTotal: discrepancy,
-          totalAmount: discrepancy,
-          paidAmount: Math.max(0, discrepancy - valDue),
+          subTotal: salesDiscrepancy,
+          totalAmount: salesDiscrepancy,
+          paidAmount: Math.max(0, salesDiscrepancy - valDue),
           dueAmount: valDue,
-          paymentMethod: valDigital > 0 ? "Digital/Cash" : "Cash",
+          paymentMethod: "Cash",
           status: valDue > 0 ? "Partial" : "Paid",
           note: "সারাদিনের সার্বিক ক্যাশ হিসাব মিলিয়ে স্বয়ংক্রিয় এন্ট্রি"
         });
@@ -383,67 +408,91 @@ export default function DayClose() {
 
           <div className="row g-2 mb-3">
             <div className="col-sm-6">
-              <label className="form-label small mb-1">২. বিকাশ / নগদ / অনলাইন কালেকশন:</label>
+              <label className="form-label small mb-1">২. আজ কাস্টমারকে বাকি দেওয়া হয়েছে:</label>
               <input
                 type="number"
                 className="form-control form-control-sm"
-                placeholder="৳ ডিজিটাল টাকা"
-                value={digitalPaid}
-                onChange={(e) => setDigitalPaid(e.target.value)}
-              />
-            </div>
-            <div className="col-sm-6">
-              <label className="form-label small mb-1">৩. আজ মোট বাকি দেওয়া হয়েছে:</label>
-              <input
-                type="number"
-                className="form-control form-control-sm"
-                placeholder="৳ বাকি বিক্রি"
+                placeholder={`৳ সিস্টেমে রেকর্ড: ${formatCurrency(totalSystemDueRecorded)}`}
                 value={todayDue}
                 onChange={(e) => setTodayDue(e.target.value)}
               />
+              <span className="text-muted" style={{ fontSize: "10px" }}>*বাকি বিক্রি (ক্যাশে যোগ হয় না, তবে বিক্রির অংশ)</span>
             </div>
-          </div>
-
-          <div className="row g-2 mb-3">
             <div className="col-sm-6">
-              <label className="form-label small mb-1">৪. সারাদিনের মোট দোকান খরচ:</label>
+              <label className="form-label small mb-1">৩. সকালের শুরুর ক্যাশ (Opening Float):</label>
               <input
                 type="number"
                 className="form-control form-control-sm"
-                placeholder="৳ নাস্তা/দুধ/ভ্যানভাড়া"
-                value={todayExpense}
-                onChange={(e) => setTodayExpense(e.target.value)}
-              />
-            </div>
-            <div className="col-sm-6">
-              <label className="form-label small mb-1">৫. সকালের শুরুর ক্যাশ (Float):</label>
-              <input
-                type="number"
-                className="form-control form-control-sm"
-                placeholder="৳ প্রারম্ভিক ক্যাশ"
+                placeholder="৳ সকালের ক্যাশ ড্রয়ারের টাকা"
                 value={openingCash}
                 onChange={(e) => setOpeningCash(e.target.value)}
               />
             </div>
           </div>
 
+          <div className="mb-3">
+            <label className="form-label small mb-1">৪. ক্যাশ ড্রয়ার থেকে আজকের খরচ (Expense Outflow):</label>
+            <input
+              type="number"
+              className="form-control form-control-sm"
+              placeholder={`৳ সিস্টেমে রেকর্ড: ${formatCurrency(totalSystemExpensesRecorded)}`}
+              value={todayExpense}
+              onChange={(e) => setTodayExpense(e.target.value)}
+            />
+            <span className="text-muted" style={{ fontSize: "10px" }}>*ক্যাশ ড্রয়ার থেকে দেওয়া খরচ (বিক্রি নয়)</span>
+          </div>
+
           {/* Reconcile Summary */}
           <div className="card bg-light border-0 p-3 mb-3">
             <div className="d-flex justify-content-between mb-1">
-              <span className="text-muted small">হাতে নগদ + ডিজিটাল + বাকি + খরচ = মোট বিক্রি:</span>
-              <span className="fw-bold text-primary">{formatCurrency(totalCalculatedDaySales)}</span>
+              <span className="text-muted small">সিস্টেমে প্রত্যাশিত ক্যাশ (Expected Drawer Cash):</span>
+              <span className="fw-semibold text-secondary">{formatCurrency(expectedCashInDrawer)}</span>
             </div>
 
-            {totalCalculatedDaySales > 0 && (
+            <div className="d-flex justify-content-between mb-1">
+              <span className="text-muted small">হাতে গোনা বাস্তব ক্যাশ (Actual Drawer Cash):</span>
+              <span className="fw-bold text-dark">{formatCurrency(valCash)}</span>
+            </div>
+
+            {valCash > 0 && (
               <div className="d-flex justify-content-between border-top pt-2 mt-1">
                 <span className="small fw-semibold">
-                  {discrepancy > 0 ? "অনিবন্ধিত বিক্রি (যুক্ত হবে):" : discrepancy < 0 ? "পার্থক্য (ঘাটতি):" : "হিসাব সম্পূর্ণ মিলেছে:"}
+                  ক্যাশ ড্রয়ার হিসাব অবস্থা ({cashDiscrepancy >= 0 ? "উদ্বৃত্ত / সঠিক" : "ঘাটতি"}):
                 </span>
-                <span className={`fw-bold ${discrepancy > 0 ? "text-success" : discrepancy < 0 ? "text-danger" : "text-muted"}`}>
-                  {discrepancy > 0 ? `+${formatCurrency(discrepancy)}` : formatCurrency(discrepancy)}
+                <span className={`fw-bold ${cashDiscrepancy > 0 ? "text-success" : cashDiscrepancy < 0 ? "text-danger" : "text-muted"}`}>
+                  {cashDiscrepancy > 0 ? `+${formatCurrency(cashDiscrepancy)} (উদ্বৃত্ত ক্যাশ)` : cashDiscrepancy < 0 ? `${formatCurrency(cashDiscrepancy)} (ক্যাশ ঘাটতি)` : "ক্যাশ হুবহু মিলেছে"}
                 </span>
               </div>
             )}
+
+            <div className="d-flex justify-content-between border-top pt-2 mt-2">
+              <span className="text-muted small">আজকের মোট সামগ্রিক বিক্রি (Total Sales):</span>
+              <span className="fw-bold text-primary">{formatCurrency(todayActualSalesTotal)}</span>
+            </div>
+
+            {salesDiscrepancy > 0 && (
+              <div className="d-flex justify-content-between mt-1">
+                <span className="small text-muted">অনিবন্ধিত অতিরিক্ত বিক্রি (স্বয়ংক্রিয় যোগ হবে):</span>
+                <span className="small fw-bold text-success">+{formatCurrency(salesDiscrepancy)}</span>
+              </div>
+            )}
+
+            {/* Quick Capital & Asset Indicator */}
+            {(() => {
+              try {
+                const uid = currentUser?.uid || "guest";
+                const caps = JSON.parse(localStorage.getItem(`mhr_capital_${uid}`) || "[]");
+                const netCap = caps.reduce((s, c) => s + (c.type === "deposit" ? Number(c.amount || 0) : -Number(c.amount || 0)), 0);
+                return (
+                  <div className="mt-2 pt-2 border-top d-flex justify-content-between small text-muted">
+                    <span>দোকানের প্রারম্ভিক/চলতি পুঁজি:</span>
+                    <span className="fw-bold text-secondary">{formatCurrency(netCap)}</span>
+                  </div>
+                );
+              } catch {
+                return null;
+              }
+            })()}
           </div>
 
           <button

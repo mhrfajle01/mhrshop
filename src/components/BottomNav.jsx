@@ -59,6 +59,14 @@ export default function BottomNav() {
       </div>
 
       <div 
+        className={`bottom-nav-item ${currentView === "capital-assets" ? "active text-success" : ""}`}
+        onClick={() => navigateTo("/capital-assets")}
+      >
+        <i className="bi bi-bank2"></i>
+        <span>মূলধন</span>
+      </div>
+
+      <div 
         className={`bottom-nav-item ${currentView === "reports" ? "active" : ""}`}
         onClick={() => navigateTo("/reports")}
       >
