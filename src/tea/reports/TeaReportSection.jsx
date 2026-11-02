@@ -18,8 +18,8 @@ export default function TeaReportSection({ startDate, endDate }) {
           teaApi.getTeaOrders(currentUser.uid, isLocalMode),
           teaApi.getTeaExpenses(currentUser.uid, isLocalMode)
         ]);
-        setTeaOrders(ords || []);
-        setTeaExpenses(exps || []);
+        setTeaOrders((ords || []).filter(o => !o.deleted));
+        setTeaExpenses((exps || []).filter(e => !e.deleted));
       } catch (e) {
         console.error("Failed to load tea report data:", e);
       } finally {

@@ -35,11 +35,11 @@ export default function Reports() {
   useEffect(() => {
     if (!currentUser) return;
     teaApi.getTeaOrders(currentUser.uid, isLocalMode)
-      .then(ords => setTeaOrders(ords || []))
+      .then(ords => setTeaOrders((ords || []).filter(o => !o.deleted)))
       .catch(e => console.error("Tea orders fetch error:", e));
 
     teaApi.getTeaExpenses(currentUser.uid, isLocalMode)
-      .then(exps => setTeaExpenses(exps || []))
+      .then(exps => setTeaExpenses((exps || []).filter(e => !e.deleted)))
       .catch(e => console.error("Tea expenses fetch error:", e));
   }, [currentUser, isLocalMode]);
 
@@ -69,19 +69,20 @@ export default function Reports() {
   // Compute reports datasets based on date filter
   const isDateInRange = (dateStr) => {
     if (!dateStr) return false;
-    return dateStr >= startDate && dateStr <= endDate;
+    const cleanDate = dateStr.slice(0, 10);
+    return cleanDate >= startDate && cleanDate <= endDate;
   };
 
-  const filteredSales = sales ? sales.filter(s => isDateInRange(s.date)) : [];
-  const filteredPurchases = purchases ? purchases.filter(p => isDateInRange(p.date)) : [];
-  const filteredExpenses = expenses ? expenses.filter(e => isDateInRange(e.date)) : [];
+  const filteredSales = sales ? sales.filter(s => isDateInRange(s.date || s.createdAt)) : [];
+  const filteredPurchases = purchases ? purchases.filter(p => isDateInRange(p.date || p.createdAt)) : [];
+  const filteredExpenses = expenses ? expenses.filter(e => isDateInRange(e.date || e.createdAt)) : [];
 
   // Tea filtered data
-  const filteredTeaOrders = teaOrders.filter(o => isDateInRange(o.date || o.createdAt?.slice(0, 10)));
-  const filteredTeaExpenses = teaExpenses.filter(e => isDateInRange(e.date || e.createdAt?.slice(0, 10)));
+  const filteredTeaOrders = teaOrders.filter(o => isDateInRange(o.date || o.createdAt));
+  const filteredTeaExpenses = teaExpenses.filter(e => isDateInRange(e.date || e.createdAt));
 
-  // Mudi calculations
-  const totalSalesVal = filteredSales.reduce((acc, s) => acc + (s.payableAmount || 0), 0);
+  // Mudi calculations (fallback to totalAmount if payableAmount is missing)
+  const totalSalesVal = filteredSales.reduce((acc, s) => acc + (s.payableAmount != null ? s.payableAmount : (s.totalAmount || 0)), 0);
   const totalPurchaseVal = filteredPurchases.reduce((acc, p) => acc + (p.totalAmount || 0), 0);
   const totalExpenseVal = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
   const totalDuesVal = filteredSales.reduce((acc, s) => acc + (s.dueAmount || 0), 0);
@@ -561,7 +562,7 @@ export default function Reports() {
                         <span className="badge bg-light text-secondary border fs-9" style={{ fontSize: "9px" }}>{sale.paymentMethod}</span>
                       </td>
                       <td className="text-end fw-bold font-monospace fs-8">
-                        {formatCurrency(sale.payableAmount)}
+                        {formatCurrency(sale.payableAmount != null ? sale.payableAmount : sale.totalAmount)}
                       </td>
                     </tr>
                   ))}
@@ -703,7 +704,7 @@ export default function Reports() {
                   </td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>{formatDate(s.date, "DD/MM/YYYY")}</td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0" }}>{s.customerName || "খুচরা ক্রেতা"}</td>
-                  <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{s.payableAmount}</td>
+                  <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{s.payableAmount != null ? s.payableAmount : s.totalAmount}</td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{s.paidAmount}</td>
                   <td style={{ padding: "8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{s.dueAmount}</td>
                 </tr>

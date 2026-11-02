@@ -4,7 +4,7 @@ import { useData } from "../../context/DataContext";
 import { getBdToday } from "../../utils/formatters";
 
 export default function TeaPOSCheckout({ cart, onComplete }) {
-  const { placeOrder } = useTea();
+  const { placeOrder, materials, updateMaterial } = useTea();
   const { customers, addNewKhataEntry, products, updateProductItem } = useData();
 
   const [isDue, setIsDue] = useState(false);
@@ -61,6 +61,50 @@ export default function TeaPOSCheckout({ cart, onComplete }) {
 
       // ২. লিংকড মুদি পণ্য থাকলে স্টক থেকে কেটে নেওয়া
       await deductLinkedProductsStock();
+
+      // ২.১ চা বিক্রি অনুযায়ী কাঁচামাল অটো-ডিডাকশন (ইউজার কনফিগার করা রেসিপি অথবা ডিফল্ট কনজাম্পশন)
+      if (materials && materials.length > 0) {
+        for (const item of cart) {
+          const qty = Number(item.qty || 1);
+
+          // ক) যদি ব্যবহারকারী মেনু ফর্ম থেকে কাঁচামাল রেসিপি সেট করে থাকেন:
+          if (Array.isArray(item.recipes) && item.recipes.length > 0) {
+            for (const rec of item.recipes) {
+              const mat = materials.find(m => m.id === rec.materialId);
+              if (mat) {
+                let deductAmount = Number(rec.amount || 0) * qty;
+                // গ্রাম বা মিলি থেকে কেজি/লিটার কনভার্সন লজিক
+                if ((rec.unit === "গ্রাম" || rec.unit === "মিলি") && (mat.unit === "কেজি" || mat.unit === "লিটার")) {
+                  deductAmount = deductAmount / 1000;
+                } else if ((rec.unit === "কেজি" || rec.unit === "লিটার") && (mat.unit === "গ্রাম" || mat.unit === "মিলি")) {
+                  deductAmount = deductAmount * 1000;
+                }
+                const newStock = Math.max(0, Number((mat.stock - deductAmount).toFixed(3)));
+                await updateMaterial(mat.id, { ...mat, stock: newStock });
+              }
+            }
+          } else {
+            // খ) রেসিপি সেট না থাকলে ডিফল্ট হিসেব:
+            const nameLower = (item.name || "").toLowerCase();
+            if (nameLower.includes("দুধ") || nameLower.includes("milk") || nameLower.includes("মালাই")) {
+              const milk = materials.find(m => m.name.includes("দুধ") || m.name.toLowerCase().includes("milk"));
+              if (milk && milk.stock > 0) {
+                await updateMaterial(milk.id, { ...milk, stock: Math.max(0, Number((milk.stock - (0.05 * qty)).toFixed(3))) });
+              }
+            }
+            if (nameLower.includes("চা") || nameLower.includes("tea")) {
+              const sugar = materials.find(m => m.name.includes("চিনি") || m.name.toLowerCase().includes("sugar"));
+              if (sugar && sugar.stock > 0) {
+                await updateMaterial(sugar.id, { ...sugar, stock: Math.max(0, Number((sugar.stock - (0.01 * qty)).toFixed(3))) });
+              }
+              const teaLeaves = materials.find(m => m.name.includes("পাতা") || m.name.toLowerCase().includes("tea"));
+              if (teaLeaves && teaLeaves.stock > 0) {
+                await updateMaterial(teaLeaves.id, { ...teaLeaves, stock: Math.max(0, Number((teaLeaves.stock - (0.005 * qty)).toFixed(3))) });
+              }
+            }
+          }
+        }
+      }
 
       // ৩. যদি বাকি হয় এবং কাস্টমার মুদি খাতার তালিকাভুক্ত হয়, তাহলে মূল খাতায় স্বয়ংক্রিয় এন্ট্রি
       if (payType === "due" && custId) {

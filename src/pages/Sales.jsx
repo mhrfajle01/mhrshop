@@ -47,14 +47,14 @@ export default function Sales() {
         id: s.id,
         origId: s.id,
         type: "mudi",
-        invoiceNumber: s.invoiceNumber,
+        invoiceNumber: s.invoiceNumber || s.invoiceNo || "N/A",
         date: s.date,
         customerName: s.customerName || "খুচরা ক্রেতা",
         paymentMethod: s.paymentMethod,
-        payableAmount: s.payableAmount,
-        paidAmount: s.paidAmount,
-        dueAmount: s.dueAmount,
-        itemsSummary: s.items?.map(it => it.name).join(", "),
+        payableAmount: s.payableAmount || s.totalAmount || s.total || 0,
+        paidAmount: s.paidAmount || 0,
+        dueAmount: s.dueAmount || 0,
+        itemsSummary: Array.isArray(s.items) ? s.items.map(it => it.name).filter(Boolean).join(", ") : "",
         raw: s
       });
     });
@@ -66,14 +66,14 @@ export default function Sales() {
         id: "tea-" + t.id,
         origId: t.id,
         type: "tea",
-        invoiceNumber: `TEA-#${t.tokenNo}`,
+        invoiceNumber: t.tokenNo ? `TEA-#${t.tokenNo}` : (t.invoiceNumber || "TEA"),
         date: t.date || t.createdAt?.slice(0, 10),
         customerName: t.customerName || "চা স্টল কাস্টমার",
         paymentMethod: t.paymentMethod || "নগদ",
-        payableAmount: t.total,
-        paidAmount: t.paid,
-        dueAmount: t.due,
-        itemsSummary: t.items?.map(it => `${it.name} (${it.qty})`).join(", "),
+        payableAmount: t.total || 0,
+        paidAmount: t.paid || 0,
+        dueAmount: t.due || 0,
+        itemsSummary: Array.isArray(t.items) ? t.items.map(it => `${it.name} (${it.qty})`).join(", ") : "",
         raw: t
       });
     });
@@ -84,12 +84,11 @@ export default function Sales() {
 
   // Filter Sales
   const filteredSales = unifiedSales.filter(sale => {
-    const term = searchQuery.toLowerCase();
-    return (
-      sale.invoiceNumber.toLowerCase().includes(term) ||
-      (sale.customerName && sale.customerName.toLowerCase().includes(term)) ||
-      (sale.itemsSummary && sale.itemsSummary.toLowerCase().includes(term))
-    );
+    const term = (searchQuery || "").toLowerCase();
+    const inv = (sale.invoiceNumber || "").toLowerCase();
+    const cust = (sale.customerName || "").toLowerCase();
+    const items = (sale.itemsSummary || "").toLowerCase();
+    return inv.includes(term) || cust.includes(term) || items.includes(term);
   });
 
   return (

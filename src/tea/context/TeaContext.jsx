@@ -32,9 +32,9 @@ export function TeaProvider({ children }) {
         teaApi.getTeaKhataSettings(currentUser.uid, isLocalMode)
       ]);
       setMenuItems(items);
-      setOrders(ords);
+      setOrders((ords || []).filter(o => !o.deleted));
       setMaterials(mats);
-      setExpenses(exps);
+      setExpenses((exps || []).filter(e => !e.deleted));
       setKhataSettings(settings);
     } finally {
       setLoading(false);

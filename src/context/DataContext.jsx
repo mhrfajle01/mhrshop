@@ -77,8 +77,8 @@ export function DataProvider({ children }) {
       setKhata(khats);
       setSettings(shopSettings);
       setActivities(acts);
-      setTeaOrders(teaOrds || []);
-      setTeaExpenses(teaExps || []);
+      setTeaOrders((teaOrds || []).filter(o => !o.deleted));
+      setTeaExpenses((teaExps || []).filter(e => !e.deleted));
     } catch (err) {
       console.error("Error loading data:", err);
       setError("ডাটা লোড করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।");
@@ -113,6 +113,13 @@ export function DataProvider({ children }) {
     const uid = currentUser.uid;
     const acts = await dbApi.getActivities(uid, isLocalMode);
     setActivities(acts);
+  };
+
+  // Clear all activity/browsing history
+  const clearBrowsingHistory = async () => {
+    if (!currentUser) return;
+    await dbApi.clearActivities(currentUser.uid, isLocalMode);
+    setActivities([]);
   };
 
   // --- CRUD DISPATCHERS ---
@@ -537,11 +544,13 @@ export function DataProvider({ children }) {
     addNewSupplier,
     updateSupplierItem,
     deleteSupplierItem,
+    addNewSale,
+    addSale: addNewSale,
+    deleteSaleItem,
     addNewExpense,
+    addExpense: addNewExpense,
     updateExpenseItem,
     deleteExpenseItem,
-    addNewSale,
-    deleteSaleItem,
     addNewPurchase,
     deletePurchaseItem,
     addNewKhataEntry,
@@ -551,7 +560,9 @@ export function DataProvider({ children }) {
     updateShopInfo,
     backupData,
     restoreData,
-    triggerFactoryReset
+    triggerFactoryReset,
+    clearBrowsingHistory,
+    updateProduct: updateProductItem
   };
 
   return (

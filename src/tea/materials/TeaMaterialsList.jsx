@@ -14,6 +14,17 @@ export default function TeaMaterialsList() {
     await updateMaterial(mat.id, { ...mat, stock: newStock });
   };
 
+  const handleWastage = async (mat) => {
+    const qtyStr = window.prompt(`"${mat.name}" কত ${mat.unit} অপচয় বা নষ্ট হয়েছে?`, "০.৫");
+    if (!qtyStr) return;
+    const qty = parseFloat(qtyStr);
+    if (!isNaN(qty) && qty > 0) {
+      const newStock = Math.max(0, Number(((mat.stock || 0) - qty).toFixed(3)));
+      await updateMaterial(mat.id, { ...mat, stock: newStock });
+      alert(`"${mat.name}" থেকে ${qty} ${mat.unit} অপচয় হিসেবে স্টক কমানো হয়েছে।`);
+    }
+  };
+
   return (
     <div className="p-2">
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -42,6 +53,9 @@ export default function TeaMaterialsList() {
                       </small>
                     </div>
                     <div className="d-flex gap-1">
+                      <button className="btn btn-sm btn-outline-warning p-1" title="নষ্ট / অপচয় (Wastage)" onClick={() => handleWastage(mat)}>
+                        <i className="bi bi-exclamation-triangle" style={{ fontSize: "11px" }}></i> অপচয়
+                      </button>
                       <button className="btn btn-sm btn-light border p-1" onClick={() => { setEditingMat(mat); setShowForm(true); }}>
                         <i className="bi bi-pencil" style={{ fontSize: "11px" }}></i>
                       </button>

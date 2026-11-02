@@ -6,10 +6,24 @@ import { DEFAULT_TEA_MENU } from "../tea/menu/TeaMenuPresets";
 import { formatCurrency, getBdToday } from "../utils/formatters";
 
 export default function DayClose() {
-  const { products, sales, purchases = [], expenses, khata = [], teaOrders = [], teaExpenses = [], addSale, addExpense, updateProduct } = useData();
+  const { products, sales, purchases = [], expenses, khata = [], teaOrders = [], teaExpenses = [], addSale, addExpense, updateProduct, deleteSaleItem, deleteExpenseItem, refreshData } = useData();
   const { currentUser, isLocalMode } = useAuth();
 
-  const [activeTab, setActiveTab] = useState("cash"); // 'cash' | 'quick-items' | 'inventory'
+  const [activeTab, setActiveTab] = useState("cash"); // 'cash' | 'quick-items' | 'inventory' | 'history'
+  const [historyList, setHistoryList] = useState([]);
+  const [editingHistoryId, setEditingHistoryId] = useState(null);
+  const [historySearchDate, setHistorySearchDate] = useState("");
+
+  const historyStorageKey = `mhr_day_close_history_${currentUser?.uid || "guest"}`;
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(historyStorageKey) || "[]");
+      setHistoryList(saved);
+    } catch {
+      setHistoryList([]);
+    }
+  }, [currentUser]);
   
   // Tea items state
   const [teaMenu, setTeaMenu] = useState([]);
@@ -21,7 +35,10 @@ export default function DayClose() {
   const [todayDue, setTodayDue] = useState("");
   const [todayExpense, setTodayExpense] = useState("");
   const [expenseTitle, setExpenseTitle] = useState("রাত শেষের দোকান খরচ");
-  const [openingCash, setOpeningCash] = useState("");
+  // Default opening cash from system float if available
+  const [openingCash, setOpeningCash] = useState(() => {
+    return localStorage.getItem("cash_opening_float") || "";
+  });
 
   // Cash denomination counter
   const [showDenom, setShowDenom] = useState(false);
@@ -30,8 +47,9 @@ export default function DayClose() {
   // Reverse inventory: { [productId]: remainingStock }
   const [inventoryRemains, setInventoryRemains] = useState({});
   const [statusMsg, setStatusMsg] = useState("");
+  const [selectedCloseDate, setSelectedCloseDate] = useState(() => getBdToday());
 
-  const todayStr = getBdToday();
+  const todayStr = selectedCloseDate || getBdToday();
 
   // Load tea menu items
   useEffect(() => {
@@ -98,17 +116,20 @@ export default function DayClose() {
   const valExp = parseFloat(todayExpense) || 0;
   const valOpening = parseFloat(openingCash) || 0;
 
-  // ১. ড্রয়ারে প্রত্যাশিত নগদ টাকা:
-  // সকালের প্রারম্ভিক ক্যাশ + সারাদিনের নগদ বিক্রি + কাস্টমারের পুরোনো বাকি আদায় - নগদ মালামাল ক্রয় - মহাজনকে দেনা পরিশোধ - সারাদিনের দোকান খরচ
-  const expectedCashInDrawer = valOpening + totalSystemCashSales + khataCustCollected - (purchasesCashToday + khataSuppPaid + (valExp || totalSystemExpensesRecorded));
+  // ১. অনিবন্ধিত বিক্রির আগে সিস্টেমে থাকা বর্তমান হিসাব:
+  const systemRecordedCash = valOpening + totalSystemCashSales + khataCustCollected - (purchasesCashToday + khataSuppPaid + (valExp || totalSystemExpensesRecorded));
 
-  // ২. ড্রয়ার ক্যাশের গরমিল (উদ্বৃত্ত বা ঘাটতি):
-  const cashDiscrepancy = (valCash > 0) ? (valCash - expectedCashInDrawer) : 0;
+  // ২. ড্রয়ার ক্যাশের উদ্বৃত্ত (সারাদিনে ডিরেক্ট এন্ট্রি ছাড়া যে নগদ বিক্রি হয়েছে):
+  const unregisteredCashSales = (valCash > 0) ? Math.max(0, valCash - systemRecordedCash) : 0;
+  const cashShortage = (valCash > 0 && valCash < systemRecordedCash) ? (systemRecordedCash - valCash) : 0;
 
-  // ৩. সারাদিনের মোট বিক্রি (নগদ বিক্রি + ডিজিটাল বিক্রি + বাকি বিক্রি):
-  // নোট: দোকান খরচ বা মহাজন পরিশোধ হলো ক্যাশ ড্রয়ার থেকে দেওয়া ব্যয় (Outflow), এটা কখনো বিক্রয় (Sales) নয়।
-  const todayActualSalesTotal = totalSystemSalesRecorded + Math.max(0, cashDiscrepancy);
-  const salesDiscrepancy = Math.max(0, cashDiscrepancy);
+  // ৩. ড্রয়ারে প্রত্যাশিত নগদ টাকা (Expected Drawer Cash):
+  // সারাদিনের নগদ বিক্রিসহ ড্রয়ার বন্ধ করার সময় ক্যাশে ঠিক যত টাকা থাকা উচিত (হাতে থাকা বাস্তব ক্যাশ)
+  const expectedCashInDrawer = valCash > 0 ? valCash : systemRecordedCash;
+
+  // ৪. সারাদিনের মোট বিক্রি (আগের রেকর্ডকৃত বিক্রি + অনিবন্ধিত নগদ বিক্রি + আজকের নতুন বাকি):
+  const todayActualSalesTotal = totalSystemSalesRecorded + unregisteredCashSales + Math.max(0, valDue - totalSystemDueRecorded);
+  const salesDiscrepancy = unregisteredCashSales + Math.max(0, valDue - totalSystemDueRecorded);
 
   // 1. Unified Cash Day Close Save
   const handleSaveCashClose = async () => {
@@ -118,9 +139,13 @@ export default function DayClose() {
         return;
       }
 
+      let createdSaleId = null;
+      let createdExpId = null;
+
       // If sales discrepancy exists, record missing sales entry
       if (salesDiscrepancy > 0) {
-        await addSale({
+        const saleRes = await addSale({
+          invoiceNumber: `DC-${Date.now().toString().slice(-6)}`,
           invoiceNo: `DC-${Date.now().toString().slice(-6)}`,
           date: todayStr,
           customerName: "সারাদিনের অনিবন্ধিত খরিদ্দার (Night Close)",
@@ -128,37 +153,81 @@ export default function DayClose() {
             productId: "general_close",
             name: "অনিবন্ধিত মোট বিক্রি (মুদি ও চা)",
             price: salesDiscrepancy,
+            sellingPrice: salesDiscrepancy,
+            purchasePrice: 0,
             quantity: 1,
             total: salesDiscrepancy
           }],
           subTotal: salesDiscrepancy,
           totalAmount: salesDiscrepancy,
+          payableAmount: salesDiscrepancy,
           paidAmount: Math.max(0, salesDiscrepancy - valDue),
           dueAmount: valDue,
           paymentMethod: "Cash",
           status: valDue > 0 ? "Partial" : "Paid",
           note: "সারাদিনের সার্বিক ক্যাশ হিসাব মিলিয়ে স্বয়ংক্রিয় এন্ট্রি"
         });
+        createdSaleId = saleRes?.id || null;
       }
 
       // If unrecorded expenses exist
       if (valExp > 0 && valExp !== totalSystemExpensesRecorded) {
         const extraExpense = Math.max(0, valExp - totalSystemExpensesRecorded);
         if (extraExpense > 0) {
-          await addExpense({
+          const expRes = await addExpense({
             title: expenseTitle || "সারাদিনের দোকান খরচ",
             amount: extraExpense,
             category: "General Expense",
             date: todayStr,
             note: "Day Close থেকে সমন্বিত"
           });
+          createdExpId = expRes?.id || null;
         }
       }
 
-      setStatusMsg("আজকের পুরো দোকানের সার্বিক হিসাব ও ক্যাশ সফলভাবে সংরক্ষিত হয়েছে!");
+      // Save to Per-day History list
+      const newEntry = {
+        id: `dc_${Date.now()}`,
+        date: todayStr,
+        createdAt: new Date().toISOString(),
+        openingCash: valOpening,
+        cashInHand: valCash,
+        todayDue: valDue,
+        todayExpense: valExp,
+        systemRecordedCash,
+        unregisteredSalesAdded: unregisteredCashSales,
+        totalSales: todayActualSalesTotal,
+        saleId: createdSaleId,
+        expenseId: createdExpId,
+        notes: { ...notes }
+      };
+
+      const updatedHistory = [newEntry, ...historyList.filter(h => h.date !== todayStr)];
+      setHistoryList(updatedHistory);
+      localStorage.setItem(historyStorageKey, JSON.stringify(updatedHistory));
+
+      if (refreshData) await refreshData();
+
+      setStatusMsg("পুরো দোকানের হিসাব সংরক্ষিত ও ড্যাশবোর্ডে আপডেট হয়েছে!");
       setTimeout(() => setStatusMsg(""), 3500);
     } catch (err) {
       alert("সংরক্ষণে সমস্যা হয়েছে: " + err.message);
+    }
+  };
+
+  // Delete Day Close from History
+  const handleDeleteHistory = async (item) => {
+    if (!window.confirm(`${item.date} তারিখের ডে-ক্লোজ হিস্ট্রি মুছে ফেলতে চান?`)) return;
+    try {
+      if (item.saleId) await deleteSaleItem(item.saleId);
+      if (item.expenseId) await deleteExpenseItem(item.expenseId, item.todayExpense);
+      const filtered = historyList.filter(h => h.id !== item.id);
+      setHistoryList(filtered);
+      localStorage.setItem(historyStorageKey, JSON.stringify(filtered));
+      if (refreshData) await refreshData();
+      alert("ডে-ক্লোজ সফলভাবে ডিলিট ও অ্যাডজাস্ট করা হয়েছে!");
+    } catch (err) {
+      alert("মুছতে সমস্যা হয়েছে: " + err.message);
     }
   };
 
@@ -211,12 +280,14 @@ export default function DayClose() {
       if (selectedMudiItems.length > 0) {
         const mudiTotal = selectedMudiItems.reduce((acc, it) => acc + it.total, 0);
         await addSale({
+          invoiceNumber: `QS-${Date.now().toString().slice(-6)}`,
           invoiceNo: `QS-${Date.now().toString().slice(-6)}`,
           date: todayStr,
           customerName: "কুইক কাউন্টার খরিদ্দার",
           items: selectedMudiItems,
           subTotal: mudiTotal,
           totalAmount: mudiTotal,
+          payableAmount: mudiTotal,
           paidAmount: mudiTotal,
           dueAmount: 0,
           paymentMethod: "Cash",
@@ -272,12 +343,14 @@ export default function DayClose() {
 
       if (adjustedItems.length > 0) {
         await addSale({
+          invoiceNumber: `STK-${Date.now().toString().slice(-6)}`,
           invoiceNo: `STK-${Date.now().toString().slice(-6)}`,
           date: todayStr,
           customerName: "স্টক ব্যালেন্সিং খরিদ্দার",
           items: adjustedItems,
           subTotal: calculatedSalesFromStock,
           totalAmount: calculatedSalesFromStock,
+          payableAmount: calculatedSalesFromStock,
           paidAmount: calculatedSalesFromStock,
           dueAmount: 0,
           paymentMethod: "Cash",
@@ -328,7 +401,13 @@ export default function DayClose() {
             className={`btn flex-grow-1 rounded-0 py-2 fw-semibold ${activeTab === "inventory" ? "btn-white text-success border-bottom border-success border-3 bg-white" : "text-muted"}`}
             onClick={() => setActiveTab("inventory")}
           >
-            <i className="bi bi-boxes me-1"></i> ৩. অবশিষ্ট স্টক দেখে হিসাব
+            <i className="bi bi-boxes me-1"></i> ৩. অবশিষ্ট স্টক
+          </button>
+          <button
+            className={`btn flex-grow-1 rounded-0 py-2 fw-semibold ${activeTab === "history" ? "btn-white text-success border-bottom border-success border-3 bg-white" : "text-muted"}`}
+            onClick={() => setActiveTab("history")}
+          >
+            <i className="bi bi-clock-history me-1"></i> ৪. হিস্ট্রি ও পূর্ববর্তী হিসাব
           </button>
         </div>
       </div>
@@ -343,10 +422,29 @@ export default function DayClose() {
       {/* Tab 1: Cash Reconciliation */}
       {activeTab === "cash" && (
         <div className="card shadow-sm border-0 p-3 mb-4">
+          {/* Date Selector for Closing (Current or Previous Days) */}
+          <div className="d-flex justify-content-between align-items-center bg-light-subtle p-2 border rounded mb-3">
+            <div>
+              <span className="fw-bold small text-dark d-block">
+                <i className="bi bi-calendar-event text-success me-1"></i> হিসাব ক্লোজের তারিখ:
+              </span>
+              <small className="text-muted" style={{ fontSize: "11px" }}>
+                পূর্বের কোনো দিনের হিসাব বাকি থাকলে তারিখ পরিবর্তন করুন
+              </small>
+            </div>
+            <input
+              type="date"
+              className="form-control form-control-sm text-end fw-semibold"
+              style={{ width: "150px" }}
+              value={selectedCloseDate}
+              onChange={(e) => setSelectedCloseDate(e.target.value)}
+            />
+          </div>
+
           <div className="row g-2 mb-3">
             <div className="col-6">
               <div className="bg-light p-2 rounded text-center">
-                <small className="text-muted d-block">রেকর্ডকৃত বিক্রি (মুদি+চা)</small>
+                <small className="text-muted d-block">রেকর্ডকৃত বিক্রি ({selectedCloseDate === getBdToday() ? "আজ" : selectedCloseDate})</small>
                 <span className="fw-bold text-dark fs-6">{formatCurrency(totalSystemSalesRecorded)}</span>
                 <div className="text-muted" style={{ fontSize: "10px" }}>
                   মুদি: {formatCurrency(mudiSalesTotal)} • চা: {formatCurrency(teaSalesTotal)}
@@ -355,7 +453,7 @@ export default function DayClose() {
             </div>
             <div className="col-6">
               <div className="bg-light p-2 rounded text-center">
-                <small className="text-muted d-block">রেকর্ডকৃত মোট খরচ</small>
+                <small className="text-muted d-block">রেকর্ডকৃত খরচ ({selectedCloseDate === getBdToday() ? "আজ" : selectedCloseDate})</small>
                 <span className="fw-bold text-danger fs-6">{formatCurrency(totalSystemExpensesRecorded)}</span>
                 <div className="text-muted" style={{ fontSize: "10px" }}>
                   মুদি: {formatCurrency(mudiExpensesTotal)} • চা: {formatCurrency(teaExpensesTotal)}
@@ -445,8 +543,8 @@ export default function DayClose() {
           {/* Reconcile Summary */}
           <div className="card bg-light border-0 p-3 mb-3">
             <div className="d-flex justify-content-between mb-1">
-              <span className="text-muted small">সিস্টেমে প্রত্যাশিত ক্যাশ (Expected Drawer Cash):</span>
-              <span className="fw-semibold text-secondary">{formatCurrency(expectedCashInDrawer)}</span>
+              <span className="text-muted small">সিস্টেমে বর্তমান হিসাবকৃত ক্যাশ (Before Night Close):</span>
+              <span className="fw-semibold text-secondary">{formatCurrency(systemRecordedCash)}</span>
             </div>
 
             <div className="d-flex justify-content-between mb-1">
@@ -454,13 +552,18 @@ export default function DayClose() {
               <span className="fw-bold text-dark">{formatCurrency(valCash)}</span>
             </div>
 
+            <div className="d-flex justify-content-between mb-1">
+              <span className="text-muted small">প্রত্যাশিত ক্লোজিং ক্যাশ (Expected Drawer Cash):</span>
+              <span className="fw-bold text-success">{formatCurrency(expectedCashInDrawer)}</span>
+            </div>
+
             {valCash > 0 && (
               <div className="d-flex justify-content-between border-top pt-2 mt-1">
                 <span className="small fw-semibold">
-                  ক্যাশ ড্রয়ার হিসাব অবস্থা ({cashDiscrepancy >= 0 ? "উদ্বৃত্ত / সঠিক" : "ঘাটতি"}):
+                  ক্যাশ ড্রয়ার অবস্থা:
                 </span>
-                <span className={`fw-bold ${cashDiscrepancy > 0 ? "text-success" : cashDiscrepancy < 0 ? "text-danger" : "text-muted"}`}>
-                  {cashDiscrepancy > 0 ? `+${formatCurrency(cashDiscrepancy)} (উদ্বৃত্ত ক্যাশ)` : cashDiscrepancy < 0 ? `${formatCurrency(cashDiscrepancy)} (ক্যাশ ঘাটতি)` : "ক্যাশ হুবহু মিলেছে"}
+                <span className={`fw-bold ${unregisteredCashSales > 0 ? "text-success" : cashShortage > 0 ? "text-danger" : "text-primary"}`}>
+                  {unregisteredCashSales > 0 ? `+${formatCurrency(unregisteredCashSales)} (আজকের অনিবন্ধিত নগদ বিক্রি)` : cashShortage > 0 ? `-${formatCurrency(cashShortage)} (ক্যাশ ঘাটতি)` : "ক্যাশ হুবহু মিলেছে"}
                 </span>
               </div>
             )}
@@ -668,6 +771,90 @@ export default function DayClose() {
           >
             <i className="bi bi-box-arrow-down me-1"></i> অবশিষ্ট স্টক অনুযায়ী বিক্রি ও স্টক সেভ করুন
           </button>
+        </div>
+      )}
+
+      {/* Tab 4: History & Date-wise Manager */}
+      {activeTab === "history" && (
+        <div className="card shadow-sm border-0 p-3 mb-4">
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <h6 className="fw-bold mb-0 text-success">
+              <i className="bi bi-calendar3 me-1"></i> ডে-ক্লোজ হিস্ট্রি ও অডিট
+            </h6>
+            <input
+              type="date"
+              className="form-control form-control-sm"
+              style={{ width: "160px" }}
+              value={historySearchDate}
+              onChange={(e) => setHistorySearchDate(e.target.value)}
+            />
+          </div>
+
+          {historyList.filter(h => !historySearchDate || h.date === historySearchDate).length === 0 ? (
+            <div className="text-center text-muted py-4">
+              <i className="bi bi-journal-x fs-2 d-block mb-1"></i>
+              কোনো হিস্ট্রি পাওয়া যায়নি
+            </div>
+          ) : (
+            <div className="list-group">
+              {historyList
+                .filter(h => !historySearchDate || h.date === historySearchDate)
+                .map(item => (
+                  <div key={item.id} className="list-group-item p-3 mb-2 border rounded shadow-sm">
+                    <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+                      <span className="fw-bold text-dark fs-6">
+                        <i className="bi bi-calendar-check me-1 text-success"></i> তারিখ: {item.date}
+                      </span>
+                      <div className="d-flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-outline-primary btn-sm py-0 px-2"
+                          onClick={() => {
+                            setSelectedCloseDate(item.date);
+                            setCashInHand((item.cashInHand || "").toString());
+                            setOpeningCash((item.openingCash || "").toString());
+                            setTodayDue((item.todayDue || "").toString());
+                            setTodayExpense((item.todayExpense || "").toString());
+                            if (item.notes) setNotes(item.notes);
+                            setActiveTab("cash");
+                          }}
+                          title="এই দিনের হিসাব এডিট বা পুনরায় মেলান"
+                        >
+                          <i className="bi bi-pencil-square"></i> সংশোধন
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline-danger btn-sm py-0 px-2"
+                          onClick={() => handleDeleteHistory(item)}
+                          title="হিস্ট্রি ও তৈরি হওয়া বিক্রি মুছুন"
+                        >
+                          <i className="bi bi-trash"></i> মুছুন
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="row g-2 small text-secondary">
+                      <div className="col-6 col-sm-3">
+                        <span className="d-block text-muted">শুরুর ক্যাশ:</span>
+                        <strong className="text-dark">{formatCurrency(item.openingCash)}</strong>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <span className="d-block text-muted">হাতে ক্যাশ:</span>
+                        <strong className="text-success">{formatCurrency(item.cashInHand)}</strong>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <span className="d-block text-muted">মোট বিক্রি:</span>
+                        <strong className="text-primary">{formatCurrency(item.totalSales)}</strong>
+                      </div>
+                      <div className="col-6 col-sm-3">
+                        <span className="d-block text-muted">দোকান খরচ:</span>
+                        <strong className="text-danger">{formatCurrency(item.todayExpense)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </div>

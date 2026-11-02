@@ -4,9 +4,11 @@ import { useData } from "../context/DataContext";
 import { useModal } from "../context/ModalContext";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import dayjs from "dayjs";
+import { db, isFirebaseConfigured } from "../firebase/config";
+import { collection, doc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
 
 export default function CapitalAssets() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLocalMode } = useAuth();
   const { products, customers = [], suppliers = [], sales = [], purchases = [], expenses = [], loading: dataLoading } = useData();
   const { showAlert, showConfirm } = useModal();
 
@@ -34,26 +36,77 @@ export default function CapitalAssets() {
   const capitalStorageKey = `mhr_capital_${uid}`;
   const assetStorageKey = `mhr_assets_${uid}`;
 
-  // Load local data
+  // Load data from Firestore if online, otherwise fallback to localStorage
   useEffect(() => {
-    try {
-      const savedCaps = JSON.parse(localStorage.getItem(capitalStorageKey) || "[]");
-      const savedAssets = JSON.parse(localStorage.getItem(assetStorageKey) || "[]");
-      setCapitals(savedCaps);
-      setAssets(savedAssets);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [uid]);
+    async function loadData() {
+      if (!isLocalMode && isFirebaseConfigured && db && currentUser) {
+        try {
+          const capSnap = await getDocs(collection(db, "users", uid, "capitals"));
+          const fireCaps = capSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  const saveCapitalsToStorage = (updated) => {
+          const assetSnap = await getDocs(collection(db, "users", uid, "assets"));
+          const fireAssets = assetSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+          // If firestore has records or synced
+          if (fireCaps.length > 0 || fireAssets.length > 0) {
+            setCapitals(fireCaps);
+            setAssets(fireAssets);
+            localStorage.setItem(capitalStorageKey, JSON.stringify(fireCaps));
+            localStorage.setItem(assetStorageKey, JSON.stringify(fireAssets));
+            return;
+          }
+        } catch (e) {
+          console.error("Firestore capital fetch error:", e);
+        }
+      }
+
+      // Local storage fallback
+      try {
+        const savedCaps = JSON.parse(localStorage.getItem(capitalStorageKey) || "[]");
+        const savedAssets = JSON.parse(localStorage.getItem(assetStorageKey) || "[]");
+        setCapitals(savedCaps);
+        setAssets(savedAssets);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    loadData();
+  }, [uid, isLocalMode, currentUser]);
+
+  const saveCapitalsToStorage = async (updated, itemToSync, isDelete = false) => {
     setCapitals(updated);
     localStorage.setItem(capitalStorageKey, JSON.stringify(updated));
+
+    if (!isLocalMode && isFirebaseConfigured && db && currentUser) {
+      try {
+        if (isDelete && itemToSync?.id) {
+          await deleteDoc(doc(db, "users", uid, "capitals", itemToSync.id));
+        } else if (itemToSync?.id) {
+          const { id, ...data } = itemToSync;
+          await setDoc(doc(db, "users", uid, "capitals", id), data);
+        }
+      } catch (err) {
+        console.error("Firestore capital sync error:", err);
+      }
+    }
   };
 
-  const saveAssetsToStorage = (updated) => {
+  const saveAssetsToStorage = async (updated, itemToSync, isDelete = false) => {
     setAssets(updated);
     localStorage.setItem(assetStorageKey, JSON.stringify(updated));
+
+    if (!isLocalMode && isFirebaseConfigured && db && currentUser) {
+      try {
+        if (isDelete && itemToSync?.id) {
+          await deleteDoc(doc(db, "users", uid, "assets", itemToSync.id));
+        } else if (itemToSync?.id) {
+          const { id, ...data } = itemToSync;
+          await setDoc(doc(db, "users", uid, "assets", id), data);
+        }
+      } catch (err) {
+        console.error("Firestore asset sync error:", err);
+      }
+    }
   };
 
   // Calculations
@@ -131,12 +184,15 @@ export default function CapitalAssets() {
     }
 
     if (editingId) {
-      const updated = capitals.map(c => 
-        c.id === editingId 
-          ? { ...c, type: capType, amount: Number(capAmount), source: capSource, note: capNote, date: capDate }
-          : c
-      );
-      saveCapitalsToStorage(updated);
+      let updatedItem = null;
+      const updated = capitals.map(c => {
+        if (c.id === editingId) {
+          updatedItem = { ...c, type: capType, amount: Number(capAmount), source: capSource, note: capNote, date: capDate };
+          return updatedItem;
+        }
+        return c;
+      });
+      saveCapitalsToStorage(updated, updatedItem);
       showAlert("সফল", "মূলধন তথ্য আপডেট হয়েছে!", "success");
     } else {
       const newItem = {
@@ -148,7 +204,7 @@ export default function CapitalAssets() {
         date: capDate,
         createdAt: new Date().toISOString()
       };
-      saveCapitalsToStorage([newItem, ...capitals]);
+      saveCapitalsToStorage([newItem, ...capitals], newItem);
       showAlert("সফল", "নতুন মূলধন রেকর্ড যোগ হয়েছে!", "success");
     }
     setShowForm(false);
@@ -166,12 +222,15 @@ export default function CapitalAssets() {
     }
 
     if (editingId) {
-      const updated = assets.map(a => 
-        a.id === editingId 
-          ? { ...a, name: assetName, cost: Number(assetCost), category: assetCategory, note: assetNote, date: assetDate }
-          : a
-      );
-      saveAssetsToStorage(updated);
+      let updatedItem = null;
+      const updated = assets.map(a => {
+        if (a.id === editingId) {
+          updatedItem = { ...a, name: assetName, cost: Number(assetCost), category: assetCategory, note: assetNote, date: assetDate };
+          return updatedItem;
+        }
+        return a;
+      });
+      saveAssetsToStorage(updated, updatedItem);
       showAlert("সফল", "সম্পদের তথ্য আপডেট হয়েছে!", "success");
     } else {
       const newItem = {
@@ -183,7 +242,7 @@ export default function CapitalAssets() {
         date: assetDate,
         createdAt: new Date().toISOString()
       };
-      saveAssetsToStorage([newItem, ...assets]);
+      saveAssetsToStorage([newItem, ...assets], newItem);
       showAlert("সফল", "নতুন সম্পদ যোগ হয়েছে!", "success");
     }
     setShowForm(false);
@@ -192,8 +251,9 @@ export default function CapitalAssets() {
   const handleDeleteCapital = async (id) => {
     const ok = await showConfirm("মুছে ফেলা নিশ্চিত করুন", "আপনি কি এই মূলধন এন্ট্রি মুছে ফেলতে চান?");
     if (ok) {
+      const itemToDelete = capitals.find(c => c.id === id);
       const updated = capitals.filter(c => c.id !== id);
-      saveCapitalsToStorage(updated);
+      saveCapitalsToStorage(updated, itemToDelete, true);
       showAlert("মুছে ফেলা হয়েছে", "এন্ট্রি মুছে ফেলা হয়েছে।", "info");
     }
   };
@@ -201,8 +261,9 @@ export default function CapitalAssets() {
   const handleDeleteAsset = async (id) => {
     const ok = await showConfirm("মুছে ফেলা নিশ্চিত করুন", "আপনি কি এই সম্পদ মুছে ফেলতে চান?");
     if (ok) {
+      const itemToDelete = assets.find(a => a.id !== id);
       const updated = assets.filter(a => a.id !== id);
-      saveAssetsToStorage(updated);
+      saveAssetsToStorage(updated, itemToDelete, true);
       showAlert("মুছে ফেলা হয়েছে", "সম্পদ মুছে ফেলা হয়েছে।", "info");
     }
   };

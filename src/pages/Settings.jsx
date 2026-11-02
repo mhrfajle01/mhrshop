@@ -24,9 +24,11 @@ export default function Settings() {
     addNewCustomer,
     addNewSupplier,
     addNewKhataEntry,
-    triggerFactoryReset
+    triggerFactoryReset,
+    clearBrowsingHistory,
+    activities
   } = useData();
-  const { isLocalMode } = useAuth();
+  const { isLocalMode, logout } = useAuth();
   const { navigateTo } = useRouter();
 
   // Active Tab state: 'shop' | 'manual-profile' | 'hisab-guide' | 'backup-reset'
@@ -62,6 +64,9 @@ export default function Settings() {
   const [resetMode, setResetMode] = useState("range"); // 'range' | 'full'
   const [resetStartDate, setResetStartDate] = useState(dayjs().subtract(7, "day").format("YYYY-MM-DD"));
   const [resetEndDate, setResetEndDate] = useState(dayjs().format("YYYY-MM-DD"));
+
+  // Browsing history log viewer
+  const [showLogViewer, setShowLogViewer] = useState(false);
 
   // Custom Modal State: null | { type: 'alert'|'confirm'|'danger'|'success'|'info', title, message, onConfirm, onCancel }
   const [modalConfig, setModalConfig] = useState(null);
@@ -1129,6 +1134,140 @@ export default function Settings() {
             >
               <i className="bi bi-trash3"></i> View Trash / Recycle Bin
             </button>
+          </div>
+
+          {/* Clear Browsing History & Cache */}
+          <div className="card-custom bg-white border border-warning-subtle p-3 mb-4">
+            <h3 className="h6 text-muted text-uppercase mb-3 font-monospace">
+              <i className="bi bi-clock-history me-1"></i>Clear Browsing History & Cache
+            </h3>
+            <p className="text-muted fs-8 mb-2">
+              আপনার সমস্ত কার্যকলাপ লগ (Activity Log), ব্রাউজিং ইতিহাস ও ক্যাশ মুছে ফেলুন। এটি আপনার পণ্য, বিক্রয় বা হিসাবের কোনো ডাটা মুছবে না।
+            </p>
+
+            {/* Clickable log count - toggles log viewer */}
+            <div 
+              className="d-flex align-items-center justify-content-between bg-light rounded p-2 mb-2"
+              style={{ cursor: "pointer" }}
+              onClick={() => setShowLogViewer(prev => !prev)}
+            >
+              <span className="fs-8 text-secondary font-monospace">
+                <i className="bi bi-journal-text me-1"></i>বর্তমান লগ এন্ট্রি: <strong>{activities ? activities.length : 0}</strong> টি
+              </span>
+              <i className={`bi ${showLogViewer ? "bi-chevron-up" : "bi-chevron-down"} text-muted`}></i>
+            </div>
+
+            {/* Expandable Activity Log Viewer */}
+            {showLogViewer && (
+              <div className="border rounded mb-3" style={{ maxHeight: "280px", overflowY: "auto" }}>
+                {(!activities || activities.length === 0) ? (
+                  <div className="text-center text-muted py-4 fs-8">কোনো কার্যকলাপ লগ নেই।</div>
+                ) : (
+                  <div className="list-group list-group-flush">
+                    {activities.map((act, idx) => (
+                      <div key={act.id || idx} className="list-group-item px-3 py-2 border-0 border-bottom">
+                        <div className="d-flex align-items-start gap-2">
+                          <span className={`badge ${
+                            act.action === "Create" ? "bg-success" : 
+                            act.action === "Update" ? "bg-primary" : 
+                            act.action === "Delete" ? "bg-danger" : "bg-secondary"
+                          }`} style={{ fontSize: "9px", minWidth: "48px" }}>
+                            {act.action === "Create" ? "তৈরি" : act.action === "Update" ? "আপডেট" : act.action === "Delete" ? "মুছে ফেলা" : act.action || "লগ"}
+                          </span>
+                          <div className="flex-grow-1" style={{ minWidth: 0 }}>
+                            <div className="fs-9 text-dark text-truncate">{act.details || "—"}</div>
+                            <small className="text-muted fs-9 font-monospace">
+                              {act.timestamp ? dayjs(act.timestamp).format("DD MMM YY, hh:mm A") : "—"}
+                            </small>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="d-flex flex-column gap-2">
+              <button 
+                type="button" 
+                className="btn btn-warning w-100 font-monospace d-flex align-items-center justify-content-center gap-2"
+                disabled={!activities || activities.length === 0}
+                onClick={() => {
+                  setModalConfig({
+                    type: "confirm",
+                    title: "ব্রাউজিং ইতিহাস মুছে ফেলুন?",
+                    message: `আপনার সমস্ত ${activities ? activities.length : 0} টি কার্যকলাপ লগ মুছে ফেলা হবে। এই পদক্ষেপটি পূর্বাবস্থায় ফেরানো যাবে না। আপনার পণ্য, বিক্রয় ও হিসাবের ডাটা অক্ষত থাকবে।`,
+                    onConfirm: async () => {
+                      try {
+                        await clearBrowsingHistory();
+                        setShowLogViewer(false);
+                        setModalConfig({
+                          type: "success",
+                          title: "ব্রাউজিং ইতিহাস মুছে ফেলা হয়েছে",
+                          message: "সমস্ত কার্যকলাপ লগ সফলভাবে পরিষ্কার করা হয়েছে।"
+                        });
+                      } catch (err) {
+                        setModalConfig({
+                          type: "danger",
+                          title: "ত্রুটি",
+                          message: "ব্রাউজিং ইতিহাস মুছতে সমস্যা হয়েছে: " + err.message
+                        });
+                      }
+                    }
+                  });
+                }}
+              >
+                <i className="bi bi-eraser-fill"></i> Clear Activity Logs (লগ মুছুন)
+              </button>
+
+              <button 
+                type="button" 
+                className="btn btn-outline-secondary w-100 font-monospace d-flex align-items-center justify-content-center gap-2"
+                onClick={() => {
+                  setModalConfig({
+                    type: "confirm",
+                    title: "অ্যাপ ক্যাশ ও সেশন পরিষ্কার করবেন?",
+                    message: "ব্রাউজার ক্যাশ, কুকিজ, সার্ভিস ওয়ার্কার ও লগইন সেশন সম্পূর্ণ পরিষ্কার করে লগইন পেইজে নেওয়া হবে। হিসাবের মূল ডাটা নিরাপদ থাকবে।",
+                    onConfirm: async () => {
+                      try {
+                        // 1. Unregister service workers
+                        if ("serviceWorker" in navigator) {
+                          const regs = await navigator.serviceWorker.getRegistrations();
+                          for (const reg of regs) { await reg.unregister(); }
+                        }
+                        // 2. Clear browser cache storage
+                        if ("caches" in window) {
+                          const names = await caches.keys();
+                          for (const name of names) { await caches.delete(name); }
+                        }
+                        // 3. Clear all cookies
+                        document.cookie.split(";").forEach((c) => {
+                          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+                        });
+                        // 4. Clear sessionStorage
+                        sessionStorage.clear();
+                        // 5. Logout & redirect to login page
+                        if (logout) {
+                          await logout();
+                        }
+                        navigateTo("/login");
+                        window.location.reload();
+                      } catch (err) {
+                        setModalConfig({
+                          type: "danger",
+                          title: "ত্রুটি",
+                          message: "ক্যাশ ও সেশন পরিষ্কার করতে সমস্যা হয়েছে: " + err.message
+                        });
+                      }
+                    }
+                  });
+                }}
+              >
+                <i className="bi bi-arrow-repeat"></i> Clear Cache & Reset App (লগআউট ও ক্যাশ মুছুন)
+              </button>
+            </div>
           </div>
 
           {/* Dangerous Zone: Factory Reset */}

@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import { useTea } from "../context/TeaContext";
 
 export default function TeaMaterialForm({ editItem, onClose }) {
-  const { addMaterial, updateMaterial } = useTea();
+  const { addMaterial, updateMaterial, addExpense } = useTea();
   const [name, setName] = useState(editItem ? editItem.name : "");
   const [stock, setStock] = useState(editItem ? editItem.stock : "");
   const [unit, setUnit] = useState(editItem ? editItem.unit : "কেজি");
   const [minStock, setMinStock] = useState(editItem ? editItem.minStock : "2");
+  const [costPrice, setCostPrice] = useState(editItem ? (editItem.costPrice || "") : "");
+  const [isPurchaseExpense, setIsPurchaseExpense] = useState(!editItem); // নতুন ক্রয়ের ক্ষেত্রে ডিফল্ট অন
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -18,12 +20,21 @@ export default function TeaMaterialForm({ editItem, onClose }) {
         name,
         stock: Number(stock || 0),
         unit,
-        minStock: Number(minStock || 0)
+        minStock: Number(minStock || 0),
+        costPrice: Number(costPrice || 0)
       };
       if (editItem) {
         await updateMaterial(editItem.id, payload);
       } else {
         await addMaterial(payload);
+        // কাঁচামাল ক্রয়ের খরচ ক্যাশ ড্রয়ার/Expense-এ রেকর্ড
+        if (isPurchaseExpense && Number(costPrice) > 0) {
+          await addExpense({
+            title: `কাঁচামাল ক্রয়: ${name} (${stock} ${unit})`,
+            amount: Number(costPrice),
+            category: "কাঁচামাল"
+          });
+        }
       }
       onClose();
     } finally {
@@ -77,17 +88,48 @@ export default function TeaMaterialForm({ editItem, onClose }) {
                   />
                 </div>
               </div>
-              <div className="mb-3">
-                <label className="form-label">সতর্কতা লেভেল (Low Alert)</label>
-                <input
-                  type="number"
-                  step="any"
-                  className="form-control"
-                  placeholder="2"
-                  value={minStock}
-                  onChange={e => setMinStock(e.target.value)}
-                />
+              <div className="row">
+                <div className="col-6 mb-3">
+                  <label className="form-label">সতর্কতা লেভেল (Low Alert)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    className="form-control"
+                    placeholder="2"
+                    value={minStock}
+                    onChange={e => setMinStock(e.target.value)}
+                  />
+                </div>
+                <div className="col-6 mb-3">
+                  <label className="form-label">ক্রয়মূল্য / খরচ (৳)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    className="form-control"
+                    placeholder="যেমন: ৫০০"
+                    value={costPrice}
+                    onChange={e => setCostPrice(e.target.value)}
+                  />
+                </div>
               </div>
+
+              {!editItem && (
+                <div className="form-check form-switch mb-2 bg-light p-2 rounded">
+                  <input
+                    className="form-check-input ms-0 me-2"
+                    type="checkbox"
+                    id="expSwitch"
+                    checked={isPurchaseExpense}
+                    onChange={e => setIsPurchaseExpense(e.target.checked)}
+                  />
+                  <label className="form-check-label small fw-semibold" htmlFor="expSwitch">
+                    দোকানের ড্রয়ার খরচ (Expense)-এ যুক্ত করুন
+                  </label>
+                  <small className="d-block text-muted" style={{ fontSize: "11px" }}>
+                    অন থাকলে ক্রয়মূল্য স্বয়ংক্রিয়ভাবে ক্যাশ ড্রয়ার খরচ হিসেবে রেকর্ড হবে
+                  </small>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>বাতিল</button>

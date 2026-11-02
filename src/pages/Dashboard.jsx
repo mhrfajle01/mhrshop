@@ -163,39 +163,39 @@ export default function Dashboard() {
   // Period Cash Flow calculations
   const isTeaPeriod = (t) => isDateInPeriod(t.date || t.createdAt?.slice(0, 10));
 
-  const periodMudiSalesPaid = sales.filter(s => isDateInPeriod(s.date)).reduce((acc, s) => acc + s.paidAmount, 0);
+  const periodMudiSalesPaid = sales.filter(s => isDateInPeriod(s.date || s.createdAt?.slice(0, 10))).reduce((acc, s) => acc + (s.paidAmount || 0), 0);
   const periodTeaSalesPaid = teaOrders.filter(t => !t.deleted && isTeaPeriod(t)).reduce((acc, t) => acc + (t.paid || 0), 0);
 
   const todaySalesPaid = shopViewFilter === "mudi" ? periodMudiSalesPaid : shopViewFilter === "tea" ? periodTeaSalesPaid : (periodMudiSalesPaid + periodTeaSalesPaid);
   
-  const todayPurchasesPaid = shopViewFilter === "tea" ? 0 : purchases.filter(p => isDateInPeriod(p.date)).reduce((acc, p) => acc + p.paidAmount, 0);
+  const todayPurchasesPaid = shopViewFilter === "tea" ? 0 : purchases.filter(p => isDateInPeriod(p.date || p.createdAt?.slice(0, 10))).reduce((acc, p) => acc + (p.paidAmount || 0), 0);
 
-  const periodMudiExpensesPaid = expenses.filter(e => isDateInPeriod(e.date)).reduce((acc, e) => acc + e.amount, 0);
+  const periodMudiExpensesPaid = expenses.filter(e => isDateInPeriod(e.date || e.createdAt?.slice(0, 10))).reduce((acc, e) => acc + (e.amount || 0), 0);
   const periodTeaExpensesPaid = teaExpenses.filter(e => !e.deleted && isTeaPeriod(e)).reduce((acc, e) => acc + (e.amount || 0), 0);
   const todayExpensesPaid = shopViewFilter === "mudi" ? periodMudiExpensesPaid : shopViewFilter === "tea" ? periodTeaExpensesPaid : (periodMudiExpensesPaid + periodTeaExpensesPaid);
 
   const todayCustomerKhataReceived = shopViewFilter === "tea" ? 0 : khata
-    .filter(k => isDateInPeriod(k.date) && k.partyType === "customer" && k.type === "payment")
-    .reduce((acc, k) => acc + k.amount, 0);
+    .filter(k => isDateInPeriod(k.date || k.createdAt?.slice(0, 10)) && k.partyType === "customer" && k.type === "payment")
+    .reduce((acc, k) => acc + (k.amount || 0), 0);
   const todaySupplierKhataPaid = shopViewFilter === "tea" ? 0 : khata
-    .filter(k => isDateInPeriod(k.date) && k.partyType === "supplier" && k.type === "payment")
-    .reduce((acc, k) => acc + k.amount, 0);
+    .filter(k => isDateInPeriod(k.date || k.createdAt?.slice(0, 10)) && k.partyType === "supplier" && k.type === "payment")
+    .reduce((acc, k) => acc + (k.amount || 0), 0);
 
   const todayCashInflow = todaySalesPaid + todayCustomerKhataReceived;
   const todayCashOutflow = todayPurchasesPaid + todaySupplierKhataPaid + todayExpensesPaid;
   const todayNetCashFlow = todayCashInflow - todayCashOutflow;
 
   // Filter period sales, purchases, expenses list
-  const todaySalesRecords = sales.filter(s => isDateInPeriod(s.date));
+  const todaySalesRecords = sales.filter(s => isDateInPeriod(s.date || s.createdAt?.slice(0, 10)));
   const todayTeaRecords = teaOrders.filter(t => !t.deleted && isTeaPeriod(t));
-  const todayPurchasesRecords = purchases.filter(p => isDateInPeriod(p.date));
-  const todayExpensesRecords = expenses.filter(e => isDateInPeriod(e.date));
+  const todayPurchasesRecords = purchases.filter(p => isDateInPeriod(p.date || p.createdAt?.slice(0, 10)));
+  const todayExpensesRecords = expenses.filter(e => isDateInPeriod(e.date || e.createdAt?.slice(0, 10)));
   const todayTeaExpensesRecords = teaExpenses.filter(e => !e.deleted && isTeaPeriod(e));
   
   // Period Sales value
   const periodMudiSalesVal = sales
-    .filter(s => isDateInPeriod(s.date))
-    .reduce((acc, s) => acc + s.payableAmount, 0);
+    .filter(s => isDateInPeriod(s.date || s.createdAt?.slice(0, 10)))
+    .reduce((acc, s) => acc + (s.payableAmount || s.totalAmount || s.total || 0), 0);
   const periodTeaSalesVal = teaOrders
     .filter(t => !t.deleted && isTeaPeriod(t))
     .reduce((acc, t) => acc + (t.total || 0), 0);
@@ -204,8 +204,8 @@ export default function Dashboard() {
 
   // Period Purchase value
   const todayPurchaseVal = shopViewFilter === "tea" ? 0 : purchases
-    .filter(p => isDateInPeriod(p.date))
-    .reduce((acc, p) => acc + p.totalAmount, 0);
+    .filter(p => isDateInPeriod(p.date || p.createdAt?.slice(0, 10)))
+    .reduce((acc, p) => acc + (p.totalAmount || 0), 0);
 
   // Period Expense value
   const todayExpenseVal = shopViewFilter === "mudi" ? periodMudiExpensesPaid : shopViewFilter === "tea" ? periodTeaExpensesPaid : (periodMudiExpensesPaid + periodTeaExpensesPaid);
@@ -214,11 +214,11 @@ export default function Dashboard() {
   let todayGrossProfit = 0;
   if (shopViewFilter !== "tea") {
     todaySalesRecords.forEach(sale => {
-      sale.items.forEach(item => {
+      (sale.items || []).forEach(item => {
         const prod = products.find(p => p.id === item.productId);
         const buyPrice = item.purchasePrice || (prod ? prod.purchasePrice : 0);
-        const profitPerItem = item.sellingPrice - buyPrice;
-        todayGrossProfit += profitPerItem * item.quantity;
+        const profitPerItem = (item.price || item.sellingPrice || 0) - buyPrice;
+        todayGrossProfit += profitPerItem * (item.quantity || 1);
       });
     });
   }
@@ -227,26 +227,31 @@ export default function Dashboard() {
   }
   const todayNetProfit = todayGrossProfit - todayExpenseVal;
 
-  // Cumulative Cash In Hand Calculation (All-time drawer balance)
-  const totalMudiSalesPaid = sales.reduce((acc, s) => acc + s.paidAmount, 0);
+  // Drawer Cash In Hand Calculation:
+  // নির্বাচিত পিরিয়ড যদি 'today' হয়, তবে প্রারম্ভিক ক্যাশ + আজকের নিট ক্যাশ ফ্লো
+  // আর যদি অল-টাইম হয় তবে মোট ক্যাশ হিসাব
+  const totalMudiSalesPaid = sales.reduce((acc, s) => acc + (s.paidAmount || 0), 0);
   const totalTeaSalesPaid = teaOrders.filter(t => !t.deleted).reduce((acc, t) => acc + (t.paid || 0), 0);
   const totalSalesPaid = shopViewFilter === "mudi" ? totalMudiSalesPaid : shopViewFilter === "tea" ? totalTeaSalesPaid : (totalMudiSalesPaid + totalTeaSalesPaid);
 
-  const totalPurchasesPaid = shopViewFilter === "tea" ? 0 : purchases.reduce((acc, p) => acc + p.paidAmount, 0);
+  const totalPurchasesPaid = shopViewFilter === "tea" ? 0 : purchases.reduce((acc, p) => acc + (p.paidAmount || 0), 0);
   
-  const totalMudiExpensesPaid = expenses.reduce((acc, e) => acc + e.amount, 0);
+  const totalMudiExpensesPaid = expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
   const totalTeaExpensesPaid = teaExpenses.filter(e => !e.deleted).reduce((acc, e) => acc + (e.amount || 0), 0);
   const totalExpensesPaid = shopViewFilter === "mudi" ? totalMudiExpensesPaid : shopViewFilter === "tea" ? totalTeaExpensesPaid : (totalMudiExpensesPaid + totalTeaExpensesPaid);
 
   const totalKhataCustomerReceived = shopViewFilter === "tea" ? 0 : khata
     .filter(k => k.partyType === "customer" && k.type === "payment")
-    .reduce((acc, k) => acc + k.amount, 0);
+    .reduce((acc, k) => acc + (k.amount || 0), 0);
   const totalKhataSupplierPaid = shopViewFilter === "tea" ? 0 : khata
     .filter(k => k.partyType === "supplier" && k.type === "payment")
-    .reduce((acc, k) => acc + k.amount, 0);
+    .reduce((acc, k) => acc + (k.amount || 0), 0);
 
-  const cashInHand = (shopViewFilter === "tea" ? 0 : openingFloat) + (totalSalesPaid + totalKhataCustomerReceived) - 
-                     (totalPurchasesPaid + totalKhataSupplierPaid + totalExpensesPaid);
+  const cumulativeDrawerCash = (shopViewFilter === "tea" ? 0 : openingFloat) + (totalSalesPaid + totalKhataCustomerReceived) - 
+                               (totalPurchasesPaid + totalKhataSupplierPaid + totalExpensesPaid);
+
+  const todayDrawerCash = (shopViewFilter === "tea" ? 0 : openingFloat) + todayNetCashFlow;
+  const cashInHand = dashboardPeriod === "today" ? todayDrawerCash : cumulativeDrawerCash;
 
   // Total Due Balance
   const totalCustomerDue = customers.reduce((acc, c) => acc + (c.due || 0), 0);
@@ -336,7 +341,8 @@ export default function Dashboard() {
     <div className="main-content">
       {/* Combined Shop Banner (Mudi + Tea) */}
       <CombinedShopBanner
-        mudiSalesToday={sales.filter(s => !s.deleted && s.date === todayStr).reduce((acc, s) => acc + (s.paidAmount || 0), 0)}
+        sales={sales}
+        teaOrders={teaOrders}
         onNavigateToTea={() => navigateTo("/tea-stall")}
       />
 

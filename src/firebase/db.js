@@ -88,6 +88,22 @@ export const getActivities = async (uid, isLocal) => {
   }
 };
 
+export const clearActivities = async (uid, isLocal) => {
+  if (!isLocal && isFirebaseConfigured && db) {
+    try {
+      const colRef = collection(db, "users", uid, "activities");
+      const snapshot = await getDocs(colRef);
+      const batch = writeBatch(db);
+      snapshot.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    } catch (e) {
+      console.error("Failed to clear activities from Firestore:", e);
+    }
+  } else {
+    saveLocalData(uid, "activities", []);
+  }
+};
+
 // --- CATEGORIES CRUD ---
 export const getCategories = async (uid, isLocal) => {
   if (!isLocal && isFirebaseConfigured && db) {
@@ -429,10 +445,12 @@ export const addSale = async (uid, isLocal, saleData) => {
     
     // Update Stocks
     for (const item of sale.items) {
-      const prodRef = doc(db, "users", uid, "products", item.productId);
-      batch.update(prodRef, {
-        stock: increment(-item.quantity)
-      });
+      if (item.productId && item.productId !== "general_close" && !item.productId.startsWith("temp_")) {
+        const prodRef = doc(db, "users", uid, "products", item.productId);
+        batch.update(prodRef, {
+          stock: increment(-item.quantity)
+        });
+      }
     }
 
     // Update Customer Due if customer exists & there is due

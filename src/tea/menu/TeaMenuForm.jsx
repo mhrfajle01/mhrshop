@@ -3,7 +3,7 @@ import { useTea } from "../context/TeaContext";
 import { useData } from "../../context/DataContext";
 
 export default function TeaMenuForm({ editItem, onClose }) {
-  const { addMenuItem, updateMenuItem } = useTea();
+  const { addMenuItem, updateMenuItem, materials = [] } = useTea();
   const { products } = useData();
 
   const [name, setName] = useState(editItem ? editItem.name : "");
@@ -11,7 +11,23 @@ export default function TeaMenuForm({ editItem, onClose }) {
   const [category, setCategory] = useState(editItem ? editItem.category : "চা");
   const [unit, setUnit] = useState(editItem ? editItem.unit : "কাপ");
   const [linkedProductId, setLinkedProductId] = useState(editItem ? (editItem.linkedProductId || "") : "");
+  const [recipes, setRecipes] = useState(editItem?.recipes || []);
   const [submitting, setSubmitting] = useState(false);
+
+  const handleAddRecipeRow = () => {
+    if (materials.length === 0) return;
+    setRecipes([...recipes, { materialId: materials[0].id, amount: "", unit: "গ্রাম" }]);
+  };
+
+  const handleUpdateRecipe = (index, field, value) => {
+    const updated = [...recipes];
+    updated[index][field] = value;
+    setRecipes(updated);
+  };
+
+  const handleRemoveRecipe = (index) => {
+    setRecipes(recipes.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,7 +39,8 @@ export default function TeaMenuForm({ editItem, onClose }) {
         price: Number(price),
         category,
         unit,
-        linkedProductId: linkedProductId || null
+        linkedProductId: linkedProductId || null,
+        recipes: recipes.filter(r => r.materialId && Number(r.amount) > 0)
       };
       if (editItem) {
         await updateMenuItem(editItem.id, payload);
@@ -93,6 +110,73 @@ export default function TeaMenuForm({ editItem, onClose }) {
                   <option value="বিস্কুট">বিস্কুট / বেকারি</option>
                   <option value="অন্যান্য">অন্যান্য</option>
                 </select>
+              </div>
+
+              {/* কাঁচামাল রেসিপি কনফিগারেশন (ইউজার নিজে সিলেক্ট করবেন প্রতি কাপে কতটুকু কাঁচামাল লাগবে) */}
+              <div className="mb-3 p-2 border rounded bg-light">
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <label className="form-label text-success mb-0 small fw-bold">
+                    🌿 কাঁচামাল খরচ রেসিপি (ঐচ্ছিক):
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-outline-success py-0 px-2"
+                    style={{ fontSize: "11px" }}
+                    onClick={handleAddRecipeRow}
+                  >
+                    + কাঁচামাল যোগ
+                  </button>
+                </div>
+                <small className="text-muted d-block mb-2" style={{ fontSize: "10px" }}>
+                  * প্রতি ১ {unit || "কাপ"} তৈরিতে কোন কাঁচামাল কতটুকু (গ্রাম/মিলি/কেজি) খরচ হবে তা সেট করুন।
+                </small>
+
+                {recipes.length === 0 ? (
+                  <div className="text-muted small text-center py-1">কোনো কাঁচামাল যুক্ত করা হয়নি</div>
+                ) : (
+                  recipes.map((rec, idx) => (
+                    <div key={idx} className="d-flex gap-1 align-items-center mb-1">
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ fontSize: "11px", flex: 2 }}
+                        value={rec.materialId}
+                        onChange={e => handleUpdateRecipe(idx, "materialId", e.target.value)}
+                      >
+                        {materials.map(m => (
+                          <option key={m.id} value={m.id}>{m.name} ({m.stock} {m.unit})</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="পরিমাণ"
+                        className="form-control form-control-sm text-center"
+                        style={{ fontSize: "11px", flex: 1 }}
+                        value={rec.amount}
+                        onChange={e => handleUpdateRecipe(idx, "amount", e.target.value)}
+                      />
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ fontSize: "11px", width: "70px" }}
+                        value={rec.unit || "গ্রাম"}
+                        onChange={e => handleUpdateRecipe(idx, "unit", e.target.value)}
+                      >
+                        <option value="গ্রাম">গ্রাম</option>
+                        <option value="মিলি">মিলি</option>
+                        <option value="কেজি">কেজি</option>
+                        <option value="লিটার">লিটার</option>
+                        <option value="পিস">পিস</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-sm text-danger p-0 px-1"
+                        onClick={() => handleRemoveRecipe(idx)}
+                      >
+                        <i className="bi bi-x-circle"></i>
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* মুদি প্রোডাক্টের সাথে ইনভেন্টরি লিংক (সিগারেট/বিস্কুটের স্টক কাটার জন্য) */}
