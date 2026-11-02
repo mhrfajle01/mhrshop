@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import dayjs from "dayjs";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
 import * as teaApi from "../tea/context/teaDb";
@@ -35,6 +36,11 @@ export default function DayClose() {
   const [todayDue, setTodayDue] = useState("");
   const [todayExpense, setTodayExpense] = useState("");
   const [expenseTitle, setExpenseTitle] = useState("রাত শেষের দোকান খরচ");
+  
+  // Morning Kitchen/Bazar (ভাত, ডাল, সবজি, ভর্তা ও কাঁচামাল বাজার খরচ)
+  const [morningBazarCost, setMorningBazarCost] = useState("");
+  const [morningBazarNote, setMorningBazarNote] = useState("সকালের রান্না ও কাঁচাবাজার (চাল, ডাল, আলু, তেল, সবজি)");
+  const [morningMealSales, setMorningMealSales] = useState("");
   // Default opening cash from system float if available
   const [openingCash, setOpeningCash] = useState(() => {
     return localStorage.getItem("cash_opening_float") || "";
@@ -65,6 +71,65 @@ export default function DayClose() {
     }
     loadMenu();
   }, [currentUser, isLocalMode]);
+
+  // Synchronize inputs when selectedCloseDate changes
+  useEffect(() => {
+    // 1. Check if there is an existing Kitchen / Morning Bazar expense on this date
+    const existingBazarExp = (expenses || []).find(e => 
+      !e.deleted && 
+      (e.date || e.createdAt?.slice(0, 10)) === todayStr && 
+      (e.category === "Kitchen / Morning Bazar" || e.title?.includes("সকালের") || e.title?.includes("রান্না") || e.title?.includes("বাজার"))
+    );
+
+    // 2. Check if this date has a previous DayClose history record
+    const historyRecord = (historyList || []).find(h => (h.date || h.createdAt?.slice(0, 10)) === todayStr);
+
+    if (existingBazarExp) {
+      setMorningBazarCost(existingBazarExp.amount ? existingBazarExp.amount.toString() : "");
+      if (existingBazarExp.title) setMorningBazarNote(existingBazarExp.title);
+    } else if (historyRecord?.morningBazarCost) {
+      setMorningBazarCost(historyRecord.morningBazarCost.toString());
+    } else {
+      setMorningBazarCost("");
+    }
+
+    if (historyRecord?.morningMealSales) {
+      setMorningMealSales(historyRecord.morningMealSales.toString());
+    } else {
+      setMorningMealSales("");
+    }
+
+    if (historyRecord?.cashInHand) {
+      setCashInHand(historyRecord.cashInHand.toString());
+    } else {
+      setCashInHand("");
+    }
+
+    // 3. Find previous day's closing cash from history (আগের রাতের ক্লোজিং ক্যাশ সাজেশন)
+    const prevDate = dayjs(todayStr).subtract(1, "day").format("YYYY-MM-DD");
+    const prevDayRecord = (historyList || []).find(h => (h.date || h.createdAt?.slice(0, 10)) === prevDate);
+    
+    if (historyRecord?.openingCash) {
+      setOpeningCash(historyRecord.openingCash.toString());
+    } else if (prevDayRecord?.cashInHand) {
+      setOpeningCash(prevDayRecord.cashInHand.toString());
+    } else if (!openingCash) {
+      const storedFloat = localStorage.getItem("cash_opening_float");
+      if (storedFloat) setOpeningCash(storedFloat);
+    }
+
+    if (historyRecord?.todayDue) {
+      setTodayDue(historyRecord.todayDue.toString());
+    } else {
+      setTodayDue("");
+    }
+
+    if (historyRecord?.todayExpense) {
+      setTodayExpense(historyRecord.todayExpense.toString());
+    } else {
+      setTodayExpense("");
+    }
+  }, [todayStr, expenses, historyList]);
 
   // Recorded stats from both Mudi and Tea today
   const mudiSalesToday = sales.filter(s => (s.date || s.createdAt?.slice(0, 10)) === todayStr && !s.deleted);
@@ -115,6 +180,11 @@ export default function DayClose() {
   const valDue = parseFloat(todayDue) || 0;
   const valExp = parseFloat(todayExpense) || 0;
   const valOpening = parseFloat(openingCash) || 0;
+  const valBazar = parseFloat(morningBazarCost) || 0;
+  const valMealSales = parseFloat(morningMealSales) || 0;
+
+  // সকালের খাবার নিট লাভ (সকালের খাবার বিক্রি - সকালের বাজার খরচ)
+  const mealNetProfit = valMealSales > 0 ? (valMealSales - valBazar) : 0;
 
   // ১. অনিবন্ধিত বিক্রির আগে সিস্টেমে থাকা বর্তমান হিসাব:
   const systemRecordedCash = valOpening + totalSystemCashSales + khataCustCollected - (purchasesCashToday + khataSuppPaid + (valExp || totalSystemExpensesRecorded));
@@ -170,6 +240,17 @@ export default function DayClose() {
         createdSaleId = saleRes?.id || null;
       }
 
+      // If morning kitchen/bazar cost exists, record it as a tracked expense
+      if (valBazar > 0) {
+        await addExpense({
+          title: morningBazarNote || "সকালের খাবার বাজার খরচ",
+          amount: valBazar,
+          category: "Kitchen / Morning Bazar",
+          date: todayStr,
+          note: "সকালের নাস্তা/খাবারের রান্না কাঁচামাল খরচ (ভাত, ডাল, সবজি, ভর্তা)"
+        });
+      }
+
       // If unrecorded expenses exist
       if (valExp > 0 && valExp !== totalSystemExpensesRecorded) {
         const extraExpense = Math.max(0, valExp - totalSystemExpensesRecorded);
@@ -194,6 +275,9 @@ export default function DayClose() {
         cashInHand: valCash,
         todayDue: valDue,
         todayExpense: valExp,
+        morningBazarCost: valBazar,
+        morningMealSales: valMealSales,
+        mealProfit: mealNetProfit,
         systemRecordedCash,
         unregisteredSalesAdded: unregisteredCashSales,
         totalSales: todayActualSalesTotal,
@@ -517,7 +601,26 @@ export default function DayClose() {
               <span className="text-muted" style={{ fontSize: "10px" }}>*বাকি বিক্রি (ক্যাশে যোগ হয় না, তবে বিক্রির অংশ)</span>
             </div>
             <div className="col-sm-6">
-              <label className="form-label small mb-1">৩. সকালের শুরুর ক্যাশ (Opening Float):</label>
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <label className="form-label small mb-0">৩. সকালের শুরুর ক্যাশ (Opening Float):</label>
+                {(() => {
+                  const prevDate = dayjs(todayStr).subtract(1, "day").format("YYYY-MM-DD");
+                  const prevRec = (historyList || []).find(h => (h.date || h.createdAt?.slice(0, 10)) === prevDate);
+                  if (prevRec?.cashInHand) {
+                    return (
+                      <span 
+                        className="badge bg-info-subtle text-info border border-info-subtle cursor-pointer" 
+                        style={{ fontSize: "10px", cursor: "pointer" }}
+                        title="আগের রাতের ক্লোজিং ক্যাশ বসাতে ক্লিক করুন"
+                        onClick={() => setOpeningCash(prevRec.cashInHand.toString())}
+                      >
+                        আগের রাতে: {formatCurrency(prevRec.cashInHand)}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
               <input
                 type="number"
                 className="form-control form-control-sm"
@@ -525,6 +628,7 @@ export default function DayClose() {
                 value={openingCash}
                 onChange={(e) => setOpeningCash(e.target.value)}
               />
+              <span className="text-muted" style={{ fontSize: "10px" }}>*আগের রাতের অবশিষ্ট নগদ ক্যাশ স্বয়ংক্রিয়ভাবে সাজেস্ট করা হয়</span>
             </div>
           </div>
 
@@ -538,6 +642,48 @@ export default function DayClose() {
               onChange={(e) => setTodayExpense(e.target.value)}
             />
             <span className="text-muted" style={{ fontSize: "10px" }}>*ক্যাশ ড্রয়ার থেকে দেওয়া খরচ (বিক্রি নয়)</span>
+          </div>
+
+          {/* সকালের রান্না ও খাবার সেকশন (ভাত, ডাল, সবজি, ভর্তা ও নাস্তা) */}
+          <div className="card border-warning-subtle bg-warning bg-opacity-10 p-3 mb-3">
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <span className="fw-bold small text-dark">
+                🍲 সকালের রান্না ও খাবার হিসাব (ভাত, ডাল, সবজি, ভর্তা)
+              </span>
+              <span className="badge bg-warning text-dark fs-9">ডেইলি কিচেন</span>
+            </div>
+            
+            <div className="row g-2">
+              <div className="col-sm-6">
+                <label className="form-label text-muted fs-8 mb-1">সকালের কিচেন/বাজার খরচ (৳):</label>
+                <input
+                  type="number"
+                  className="form-control form-control-sm"
+                  placeholder="যেমন: চাল, ডাল, আলু, তেল (৳)"
+                  value={morningBazarCost}
+                  onChange={(e) => setMorningBazarCost(e.target.value)}
+                />
+              </div>
+              <div className="col-sm-6">
+                <label className="form-label text-muted fs-8 mb-1">সকালের খাবার থেকে বিক্রি (৳):</label>
+                <input
+                  type="number"
+                  className="form-control form-control-sm"
+                  placeholder="মোট প্লেট/নাস্তা বিক্রি (৳)"
+                  value={morningMealSales}
+                  onChange={(e) => setMorningMealSales(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {(valBazar > 0 || valMealSales > 0) && (
+              <div className="d-flex justify-content-between align-items-center border-top border-warning-subtle pt-2 mt-2">
+                <span className="fs-8 fw-semibold text-secondary">সকালের খাবারের নিট লাভ:</span>
+                <span className={`fw-bold fs-7 ${mealNetProfit >= 0 ? "text-success" : "text-danger"}`}>
+                  {formatCurrency(mealNetProfit)} {mealNetProfit >= 0 ? "(মুনাফা)" : "(লোকসান)"}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Reconcile Summary */}
@@ -572,6 +718,15 @@ export default function DayClose() {
               <span className="text-muted small">আজকের মোট সামগ্রিক বিক্রি (Total Sales):</span>
               <span className="fw-bold text-primary">{formatCurrency(todayActualSalesTotal)}</span>
             </div>
+
+            {valBazar > 0 && (
+              <div className="d-flex justify-content-between pt-1">
+                <span className="text-muted small">সকালের কিচেন/খাবারের লাভ:</span>
+                <span className={`fw-bold small ${mealNetProfit >= 0 ? "text-success" : "text-danger"}`}>
+                  {formatCurrency(mealNetProfit)}
+                </span>
+              </div>
+            )}
 
             {salesDiscrepancy > 0 && (
               <div className="d-flex justify-content-between mt-1">
